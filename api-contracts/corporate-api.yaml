@@ -253,7 +253,8 @@ components:
 
   securitySchemes:
     mTLS:
-      type: mutualTLS
+      type: http
+      scheme: bearer
       description: |
         Mutual TLS authentication enforced by reverse proxy.
         Client must present a valid certificate trusted by the server.
