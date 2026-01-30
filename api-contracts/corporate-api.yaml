@@ -1,0 +1,270 @@
+openapi: "3.0.3"
+info:
+  title: CORPORATE DMZ API
+  description: |
+    Corporate-side API for secure message exchange via DMZ Gateway.
+
+    ## Security
+    - All endpoints require mTLS authentication (enforced by reverse proxy)
+    - The `/dmz/messages` endpoint only accepts requests from the Gateway (enforced by proxy)
+
+    ## Project Whitelist
+    The corporate API enforces a project whitelist. Messages with projects not in the
+    whitelist or with disabled projects will be rejected.
+
+    The whitelist is managed via a CLI tool and can be updated at runtime without
+    service restart.
+
+    ## Error Handling
+    All error responses use a generic message to avoid information leakage.
+    Detailed error information is logged server-side with the request_id.
+  version: "1.0.0"
+  contact:
+    name: API Support
+
+servers:
+  - url: https://corporate-api.example.com
+    description: Production server (mTLS required)
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the service
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /messages:
+    post:
+      summary: Send message to Gateway (outbound)
+      description: |
+        Validates the message schema, checks project whitelist, and forwards to the DMZ Gateway.
+
+        **Security:**
+        - Requires mTLS authentication (enforced by reverse proxy)
+        - Project must be whitelisted and enabled
+      operationId: sendMessage
+      tags:
+        - Messages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Message"
+            example:
+              ID: "550e8400-e29b-41d4-a716-446655440000"
+              Project: "AAA"
+              TestID: "AAA-1112"
+              Area: "Area Name"
+              Status: "Inprogress"
+              Date: "30012026T11:22:33"
+              Data:
+                random: "A"
+                name: "john smith"
+      responses:
+        "200":
+          description: Message sent successfully
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Unique request identifier for tracking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: |
+            Invalid request. Possible causes:
+            - Schema validation failed
+            - Project not whitelisted or disabled
+
+            Note: The error message is generic and does not reveal the specific cause.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Gateway unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /dmz/messages:
+    post:
+      summary: Receive message from Gateway (inbound)
+      description: |
+        Validates the message schema, checks project whitelist, and writes to disk atomically.
+
+        **Security:**
+        - Requires mTLS authentication (enforced by reverse proxy)
+        - Only accepts requests from Gateway certificates (enforced by proxy)
+        - Project must be whitelisted and enabled
+      operationId: receiveMessage
+      tags:
+        - DMZ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Message"
+      responses:
+        "200":
+          description: Message received and stored successfully
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Unique request identifier for tracking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: |
+            Invalid request. Possible causes:
+            - Schema validation failed
+            - Project not whitelisted or disabled
+
+            Note: The error message is generic and does not reveal the specific cause.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error (disk write failed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    Message:
+      type: object
+      description: DMZ message with strict top-level schema
+      required:
+        - ID
+        - Project
+        - TestID
+        - Area
+        - Status
+        - Date
+        - Data
+      additionalProperties: false
+      properties:
+        ID:
+          type: string
+          format: uuid
+          description: Unique message identifier (UUID)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        Project:
+          type: string
+          pattern: "^[A-Z0-9]{3}$"
+          description: 3-character project code (uppercase alphanumeric). Must be whitelisted.
+          example: "AAA"
+        TestID:
+          type: string
+          description: Test identifier
+          example: "AAA-1112"
+        Area:
+          type: string
+          description: Area name
+          example: "Area Name"
+        Status:
+          type: string
+          description: Current status
+          example: "Inprogress"
+        Date:
+          type: string
+          pattern: "^[0-3][0-9][0-1][0-9][0-9]{4}T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]$"
+          description: Date in ddMMyyyyThh:mm:ss format
+          example: "30012026T11:22:33"
+        Data:
+          type: object
+          additionalProperties: true
+          description: Flexible data object with arbitrary key-value pairs
+          example:
+            random: "A"
+            name: "john smith"
+
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - request_id
+        - message_id
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+          description: Indicates successful operation
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracking
+        message_id:
+          type: string
+          format: uuid
+          description: The message ID that was processed
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - request_id
+        - error
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+          description: Indicates failed operation
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracking
+        error:
+          type: string
+          description: Generic error message (no details exposed)
+          example: "Invalid request"
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: ["ok"]
+          description: Health status
+
+  securitySchemes:
+    mTLS:
+      type: mutualTLS
+      description: |
+        Mutual TLS authentication enforced by reverse proxy.
+        Client must present a valid certificate trusted by the server.
+
+security:
+  - mTLS: []
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Messages
+    description: Outbound message operations
+  - name: DMZ
+    description: Inbound message operations from Gateway
