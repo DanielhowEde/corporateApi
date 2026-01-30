@@ -1,0 +1,84 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="alert alert-info">
+    <strong>Note:</strong> {{ note }}
+</div>
+
+<div class="card">
+    <h2>Active Certificates</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Subject</th>
+                <th>Issuer</th>
+                <th>Expires</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cert in certs %}
+            <tr>
+                <td><strong>{{ cert.name }}</strong></td>
+                <td><code>{{ cert.subject }}</code></td>
+                <td>{{ cert.issuer }}</td>
+                <td>{{ cert.expires }}</td>
+                <td>
+                    {% if cert.status == 'valid' %}
+                    <span class="status-badge status-valid">Valid</span>
+                    {% elif cert.status == 'expiring' %}
+                    <span class="status-badge status-expiring">Expiring Soon</span>
+                    {% else %}
+                    <span class="status-badge status-disabled">{{ cert.status }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Certificate Renewal Process</h2>
+    <p>To renew or roll certificates:</p>
+    <ol style="margin: 1rem 0 0 1.5rem;">
+        <li>Contact the PKI team at <strong>security@example.com</strong></li>
+        <li>Provide the certificate name and reason for renewal</li>
+        <li>PKI team will generate new certificates and coordinate deployment</li>
+        <li>Update reverse proxy configuration with new certificates</li>
+        <li>Restart the reverse proxy to apply changes</li>
+    </ol>
+</div>
+
+<div class="card">
+    <h2>mTLS Configuration</h2>
+    <p class="text-muted">
+        Mutual TLS is enforced by the reverse proxy (Nginx/Envoy). The Corporate API trusts the proxy
+        to verify client certificates and pass certificate information via headers.
+    </p>
+    <table class="mt-4">
+        <tr>
+            <td><strong>Client Cert Header</strong></td>
+            <td><code>X-Client-Cert-DN</code></td>
+        </tr>
+        <tr>
+            <td><strong>Client Fingerprint Header</strong></td>
+            <td><code>X-Client-Cert-Fingerprint</code></td>
+        </tr>
+        <tr>
+            <td><strong>Gateway Certificate CN</strong></td>
+            <td><code>gateway.dmz.example.com</code></td>
+        </tr>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,5 @@
+{
+  "MASTER_DIR": "./data/messages",
+  "TMP_DIR": "./data/tmp",
+  "GATEWAY_URL": "http://gateway.dmz.example.com:8000"
+}

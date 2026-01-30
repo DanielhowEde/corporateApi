@@ -1,0 +1,35 @@
+{% extends "user/base.html" %}
+
+{% block content %}
+<div class="alert alert-info">
+    <strong>Coming Soon:</strong> {{ note }}
+</div>
+
+<div class="card">
+    <h2>Message History</h2>
+    <p class="text-muted">
+        This feature will allow you to view previously sent messages and track their delivery status.
+    </p>
+
+    <h3 style="margin-top: 1.5rem; font-size: 1rem; color: #374151;">Planned Features:</h3>
+    <ul style="margin: 1rem 0 0 1.5rem; color: #6b7280;">
+        <li>View all sent messages with timestamps</li>
+        <li>Filter by project, date range, or status</li>
+        <li>Track delivery confirmation from gateway</li>
+        <li>Resend failed messages</li>
+        <li>Export message history</li>
+    </ul>
+</div>
+
+<div class="card">
+    <h2>Need to Check a Message?</h2>
+    <p>
+        For now, you can check the status of sent messages by:
+    </p>
+    <ol style="margin: 1rem 0 0 1.5rem;">
+        <li>Note the <strong>Message ID</strong> shown after sending</li>
+        <li>Contact your system administrator to verify delivery</li>
+        <li>Check the application logs for the request ID</li>
+    </ol>
+</div>
+{% endblock %}

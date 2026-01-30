@@ -1,0 +1,50 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Welcome to Corporate DMZ Admin</h2>
+    <p>Use this interface to manage the Corporate DMZ API configuration.</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+    <div class="card">
+        <h2>Project Whitelist</h2>
+        <p class="text-muted mb-4">Manage which projects are allowed to exchange messages through the DMZ Gateway.</p>
+        <a href="/admin/projects" class="btn btn-primary">Manage Projects</a>
+    </div>
+
+    <div class="card">
+        <h2>Certificates</h2>
+        <p class="text-muted mb-4">View certificate status and request renewals from the PKI team.</p>
+        <a href="/admin/certs" class="btn btn-primary">View Certificates</a>
+    </div>
+
+    <div class="card">
+        <h2>Users</h2>
+        <p class="text-muted mb-4">User management (v2 feature - currently using mTLS only).</p>
+        <a href="/admin/users" class="btn btn-secondary">View Users</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>API Status</h2>
+    <table>
+        <tr>
+            <td><strong>Service</strong></td>
+            <td>Corporate DMZ API</td>
+        </tr>
+        <tr>
+            <td><strong>Version</strong></td>
+            <td>1.0.0</td>
+        </tr>
+        <tr>
+            <td><strong>Health</strong></td>
+            <td><span class="status-badge status-valid">Healthy</span></td>
+        </tr>
+        <tr>
+            <td><strong>Authentication</strong></td>
+            <td>mTLS (via reverse proxy)</td>
+        </tr>
+    </table>
+</div>
+{% endblock %}

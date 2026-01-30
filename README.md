@@ -44,6 +44,9 @@ repo/
 │   │   ├── file_store.py     # Atomic file writing
 │   │   ├── gateway_client.py # HTTP client for Gateway
 │   │   ├── whitelist.py      # Project whitelist (JSON file)
+│   │   ├── admin.py          # Admin web interface routes
+│   │   ├── user.py           # User web interface routes
+│   │   ├── templates/        # HTML templates for web UIs
 │   │   └── utils.py          # Utilities & logging
 │   ├── scripts/
 │   │   └── whitelist_admin.py # CLI tool for whitelist management
@@ -249,9 +252,74 @@ python scripts/whitelist_admin.py check AAA
 
 The whitelist can be updated at runtime without restarting the service:
 - Edit the JSON file directly, or
-- Use the CLI tool
+- Use the CLI tool, or
+- Use the Admin web interface
 
 Changes are detected automatically via file modification time and take effect immediately.
+
+## Admin Web Interface (Corporate Only)
+
+The corporate API includes a web-based admin interface for managing projects and viewing certificate status.
+
+### Accessing the Admin Interface
+
+Navigate to `http://localhost:8001/admin/` (or your configured host/port).
+
+### Admin Pages
+
+| Page | URL | Description |
+|------|-----|-------------|
+| Dashboard | `/admin/` | Overview and quick links |
+| Projects | `/admin/projects` | Add, enable, disable, remove projects |
+| Certificates | `/admin/certs` | View certificate status and renewal info |
+| Users | `/admin/users` | User management (v2 placeholder) |
+
+### Features
+
+- **Project Management**: Add new projects, enable/disable existing ones, remove projects
+- **Certificate Visibility**: View active certificates and their expiration dates
+- **No restart required**: Changes take effect immediately
+
+### Security Note
+
+The admin interface should be protected by mTLS like all other endpoints. Configure your reverse proxy to restrict `/admin/*` access to authorized admin certificates only.
+
+Example Nginx configuration:
+```nginx
+location /admin/ {
+    if ($ssl_client_s_dn !~ "CN=admin.corporate.example.com") {
+        return 403;
+    }
+    proxy_pass http://127.0.0.1:8001;
+}
+```
+
+## User Web Interface (Corporate Only)
+
+The corporate API includes a user-facing web interface for sending messages manually.
+
+### Accessing the User Interface
+
+Navigate to `http://localhost:8001/user/` (or your configured host/port).
+
+### User Pages
+
+| Page | URL | Description |
+|------|-----|-------------|
+| Home | `/user/` | Welcome page and quick links |
+| Send Message | `/user/send` | Compose and send messages to low-side |
+| History | `/user/history` | View sent messages (coming soon) |
+
+### Send Message Features
+
+- **Project Selection**: Dropdown shows only authorized (whitelisted) projects
+- **Auto-generated IDs**: UUID and current timestamp auto-populated
+- **Schema Validation**: Form validates against message schema before sending
+- **Custom Data**: JSON editor for arbitrary data payload
+
+### Security Note
+
+The user interface should be protected by mTLS. Configure your reverse proxy to restrict `/user/*` access to authorized user certificates.
 
 ## Testing
 

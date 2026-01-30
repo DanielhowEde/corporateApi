@@ -1,0 +1,96 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Add New Project</h2>
+    <form action="/admin/projects/add" method="post" class="form-inline">
+        <div class="form-group">
+            <label for="project_code">Project Code</label>
+            <input type="text"
+                   id="project_code"
+                   name="project_code"
+                   class="form-control"
+                   placeholder="AAA"
+                   maxlength="3"
+                   pattern="[A-Za-z0-9]{3}"
+                   style="width: 120px; text-transform: uppercase;"
+                   required>
+        </div>
+        <div class="form-group">
+            <label class="form-check">
+                <input type="checkbox" name="enabled" value="true" checked>
+                Enabled
+            </label>
+        </div>
+        <button type="submit" class="btn btn-primary">Add Project</button>
+    </form>
+    <p class="text-muted mt-2">Project code must be exactly 3 uppercase alphanumeric characters (A-Z, 0-9).</p>
+</div>
+
+<div class="card">
+    <h2>Project Whitelist</h2>
+
+    {% if projects %}
+    <table>
+        <thead>
+            <tr>
+                <th>Project Code</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for code, enabled in projects %}
+            <tr>
+                <td><strong>{{ code }}</strong></td>
+                <td>
+                    {% if enabled %}
+                    <span class="status-badge status-enabled">Enabled</span>
+                    {% else %}
+                    <span class="status-badge status-disabled">Disabled</span>
+                    {% endif %}
+                </td>
+                <td class="actions">
+                    {% if enabled %}
+                    <form action="/admin/projects/{{ code }}/disable" method="post" style="display:inline;">
+                        <button type="submit" class="btn btn-secondary btn-sm">Disable</button>
+                    </form>
+                    {% else %}
+                    <form action="/admin/projects/{{ code }}/enable" method="post" style="display:inline;">
+                        <button type="submit" class="btn btn-success btn-sm">Enable</button>
+                    </form>
+                    {% endif %}
+                    <form action="/admin/projects/{{ code }}/remove" method="post" style="display:inline;"
+                          onsubmit="return confirm('Are you sure you want to remove project {{ code }}?');">
+                        <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No projects in whitelist. Add a project above to get started.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Help</h2>
+    <p>The project whitelist controls which projects can send and receive messages through the DMZ Gateway.</p>
+    <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
+        <li><strong>Enabled</strong>: Messages for this project are allowed.</li>
+        <li><strong>Disabled</strong>: Messages for this project are rejected with a generic error.</li>
+    </ul>
+    <p class="mt-4 text-muted">
+        You can also edit the whitelist file directly at: <code>./data/whitelist.json</code>
+    </p>
+</div>
+{% endblock %}

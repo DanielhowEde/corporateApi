@@ -25,9 +25,6 @@ from .utils import generate_request_id, set_request_id, setup_logging
 # Configure logging
 logger = setup_logging("low_side_api")
 
-# Configuration from environment
-DATA_DIR = os.environ.get("DATA_DIR", "./data")
-
 # Global instances (initialized in lifespan)
 file_store: FileStore
 gateway_client: GatewayClient
@@ -40,9 +37,12 @@ async def lifespan(app: FastAPI):
 
     # Startup
     logger.info("Starting LOW-SIDE DMZ API")
-    file_store = FileStore(data_dir=DATA_DIR)
+
+    # Initialize components (they use config.py for paths)
+    file_store = FileStore()
     gateway_client = GatewayClient()
-    logger.info(f"File store initialized at: {DATA_DIR}")
+
+    logger.info(f"Message store: {file_store.master_dir}")
     logger.info(f"Gateway URL: {gateway_client.base_url}")
 
     yield

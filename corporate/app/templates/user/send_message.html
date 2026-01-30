@@ -1,0 +1,121 @@
+{% extends "user/base.html" %}
+
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Send Message to Low-Side</h2>
+
+    <form action="/user/send" method="post">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="message_id">Message ID (UUID)</label>
+                <input type="text"
+                       id="message_id"
+                       name="message_id"
+                       class="form-control"
+                       value="{{ default_id }}"
+                       required>
+                <p class="form-help">Auto-generated UUID. You can modify if needed.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="project">Project</label>
+                <select id="project" name="project" class="form-control" required>
+                    <option value="">-- Select Project --</option>
+                    {% for code, enabled in projects %}
+                    <option value="{{ code }}">{{ code }}</option>
+                    {% endfor %}
+                </select>
+                <p class="form-help">Only authorized projects are shown.</p>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="test_id">Test ID</label>
+                <input type="text"
+                       id="test_id"
+                       name="test_id"
+                       class="form-control"
+                       placeholder="AAA-1112"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="area">Area</label>
+                <input type="text"
+                       id="area"
+                       name="area"
+                       class="form-control"
+                       placeholder="Area Name"
+                       required>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="msg_status">Status</label>
+                <input type="text"
+                       id="msg_status"
+                       name="msg_status"
+                       class="form-control"
+                       placeholder="Inprogress"
+                       value="Inprogress"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="date">Date</label>
+                <input type="text"
+                       id="date"
+                       name="date"
+                       class="form-control"
+                       value="{{ default_date }}"
+                       pattern="[0-3][0-9][0-1][0-9][0-9]{4}T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]"
+                       required>
+                <p class="form-help">Format: ddMMyyyyThh:mm:ss (e.g., 30012026T11:22:33)</p>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="data_json">Data (JSON Object)</label>
+            <textarea id="data_json"
+                      name="data_json"
+                      class="form-control"
+                      placeholder='{
+  "key": "value",
+  "name": "john smith"
+}'>{}</textarea>
+            <p class="form-help">Enter a valid JSON object. This can contain any custom data.</p>
+        </div>
+
+        <button type="submit" class="btn btn-success">
+            Send Message
+        </button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Message Schema Reference</h2>
+    <p class="text-muted mb-4">Your message will be validated against this schema before sending:</p>
+
+    <pre style="background: #f3f4f6; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.9rem;"><code>{
+  "ID": "550e8400-e29b-41d4-a716-446655440000",  // UUID
+  "Project": "AAA",                              // 3 chars, A-Z0-9
+  "TestID": "AAA-1112",
+  "Area": "Area Name",
+  "Status": "Inprogress",
+  "Date": "30012026T11:22:33",                   // ddMMyyyyThh:mm:ss
+  "Data": {                                      // Any JSON object
+    "key": "value"
+  }
+}</code></pre>
+</div>
+{% endblock %}

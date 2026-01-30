@@ -10,7 +10,8 @@ Security Assumptions:
   (enforced by proxy configuration; placeholder middleware included for future cert checks)
 
 Corporate-Specific Features:
-- Project whitelist enforcement via SQLite database
+- Project whitelist enforcement via JSON file (runtime updates supported)
+- Admin web interface for managing projects and viewing certificates
 - Projects must be present and enabled to send/receive messages
 """
 import os
@@ -26,12 +27,11 @@ from .gateway_client import GatewayClient, GatewayError, GatewayUnavailableError
 from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
 from .utils import generate_request_id, set_request_id, setup_logging
 from .whitelist import ProjectWhitelist
+from . import admin
+from . import user
 
 # Configure logging
 logger = setup_logging("corporate_api")
-
-# Configuration from environment
-DATA_DIR = os.environ.get("DATA_DIR", "./data")
 
 # Global instances (initialized in lifespan)
 file_store: FileStore
@@ -46,12 +46,22 @@ async def lifespan(app: FastAPI):
 
     # Startup
     logger.info("Starting CORPORATE DMZ API")
-    file_store = FileStore(data_dir=DATA_DIR)
+
+    # Initialize components (they use config.py for paths)
+    file_store = FileStore()
     gateway_client = GatewayClient()
     whitelist = ProjectWhitelist()
-    logger.info(f"File store initialized at: {DATA_DIR}")
+
+    # Set dependencies for admin module
+    admin.set_whitelist(whitelist)
+
+    # Set dependencies for user module
+    user.set_whitelist(whitelist)
+    user.set_gateway_client(gateway_client)
+
+    logger.info(f"Message store: {file_store.master_dir}")
     logger.info(f"Gateway URL: {gateway_client.base_url}")
-    logger.info(f"Whitelist DB: {whitelist.db_path}")
+    logger.info(f"Whitelist file: {whitelist.file_path}")
 
     yield
 
@@ -67,6 +77,12 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Include admin routes
+app.include_router(admin.router)
+
+# Include user routes
+app.include_router(user.router)
 
 
 # =============================================================================
