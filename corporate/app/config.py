@@ -26,8 +26,13 @@ class Config:
 
     # Default configuration values
     DEFAULTS = {
+        # Branding - customize these for your organization
+        "COMPANY_NAME": "Corporate",
+        "SERVICE_NAME": "DMZ API",
+        "NETWORK_LABEL": "CORPORATE NETWORK",
+
         # Master directory for message storage
-        # Messages stored as: ${MASTER_DIR}/${Project}/YYYY/MM/DD/{message_id}.json
+        # Messages stored as: ${MASTER_DIR}/${Project}/{message_id}.json
         "MASTER_DIR": "./data/messages",
 
         # Temporary directory for atomic writes
@@ -122,6 +127,26 @@ class Config:
     def admin_password(self) -> str:
         """Get the admin password."""
         return self._config["ADMIN_PASSWORD"]
+
+    @property
+    def company_name(self) -> str:
+        """Get the company name for branding."""
+        return self._config["COMPANY_NAME"]
+
+    @property
+    def service_name(self) -> str:
+        """Get the service name for branding."""
+        return self._config["SERVICE_NAME"]
+
+    @property
+    def network_label(self) -> str:
+        """Get the network label (e.g., 'CORPORATE NETWORK')."""
+        return self._config["NETWORK_LABEL"]
+
+    @property
+    def full_name(self) -> str:
+        """Get the full service name (Company + Service)."""
+        return f"{self._config['COMPANY_NAME']} {self._config['SERVICE_NAME']}"
 
     def reload(self) -> None:
         """Reload configuration from file and environment."""

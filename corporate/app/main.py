@@ -22,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from .config import config
 from .file_store import FileStore, FileStoreError
 from .gateway_client import GatewayClient, GatewayError, GatewayUnavailableError
 from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
@@ -45,7 +46,7 @@ async def lifespan(app: FastAPI):
     global file_store, gateway_client, whitelist
 
     # Startup
-    logger.info("Starting CORPORATE DMZ API")
+    logger.info(f"Starting {config.full_name}")
 
     # Initialize components (they use config.py for paths)
     file_store = FileStore()
@@ -66,14 +67,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down CORPORATE DMZ API")
+    logger.info(f"Shutting down {config.full_name}")
     await gateway_client.close()
     whitelist.close()
 
 
 app = FastAPI(
-    title="CORPORATE DMZ API",
-    description="Corporate-side API for secure message exchange via DMZ Gateway",
+    title=f"{config.full_name}",
+    description=f"{config.company_name} API for secure message exchange via DMZ Gateway",
     version="1.0.0",
     lifespan=lifespan
 )

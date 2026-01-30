@@ -15,6 +15,7 @@ from fastapi import APIRouter, Cookie, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from .config import config
 from .whitelist import ProjectWhitelist, WhitelistError
 from .utils import setup_logging
 from . import auth
@@ -24,6 +25,16 @@ logger = setup_logging("admin")
 # Set up templates directory
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def get_branding() -> dict:
+    """Get branding context for templates."""
+    return {
+        "company_name": config.company_name,
+        "service_name": config.service_name,
+        "network_label": config.network_label,
+        "full_name": config.full_name,
+    }
 
 # Create router
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -58,7 +69,8 @@ async def admin_login_page(request: Request, error: str = ""):
     return templates.TemplateResponse("admin/login.html", {
         "request": request,
         "title": "Admin Login",
-        "error": error
+        "error": error,
+        **get_branding()
     })
 
 
@@ -121,7 +133,8 @@ async def admin_dashboard(
 
     return templates.TemplateResponse("admin/dashboard.html", {
         "request": request,
-        "title": "Admin Dashboard"
+        "title": "Admin Dashboard",
+        **get_branding()
     })
 
 
@@ -142,7 +155,8 @@ async def admin_projects(
         "title": "Project Whitelist",
         "projects": projects,
         "message": message,
-        "error": error
+        "error": error,
+        **get_branding()
     })
 
 
@@ -286,7 +300,8 @@ async def admin_certs(
         "certs": certs,
         "message": message,
         "error": error,
-        "note": "Certificate operations are managed by the PKI team. Contact security@example.com for cert renewal requests."
+        "note": "Certificate operations are managed by the PKI team. Contact security@example.com for cert renewal requests.",
+        **get_branding()
     })
 
 
@@ -314,7 +329,8 @@ async def admin_users(
         "users": users,
         "user_count": user_count,
         "message": message,
-        "error": error
+        "error": error,
+        **get_branding()
     })
 
 

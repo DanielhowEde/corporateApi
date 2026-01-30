@@ -21,6 +21,7 @@ from fastapi import APIRouter, Cookie, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from .config import config
 from .models import Message
 from .whitelist import ProjectWhitelist
 from .utils import setup_logging
@@ -31,6 +32,16 @@ logger = setup_logging("user_interface")
 # Set up templates directory
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def get_branding() -> dict:
+    """Get branding context for templates."""
+    return {
+        "company_name": config.company_name,
+        "service_name": config.service_name,
+        "network_label": config.network_label,
+        "full_name": config.full_name,
+    }
 
 # Create router
 router = APIRouter(prefix="/user", tags=["User Interface"])
@@ -87,7 +98,8 @@ async def user_login_page(request: Request, error: str = "", message: str = ""):
         "request": request,
         "title": "Login",
         "error": error,
-        "message": message
+        "message": message,
+        **get_branding()
     })
 
 
@@ -171,7 +183,8 @@ async def user_change_password_page(
         "username": username,
         "is_required": is_required,
         "error": error,
-        "message": message
+        "message": message,
+        **get_branding()
     })
 
 
@@ -251,7 +264,8 @@ async def user_home(
         "request": request,
         "title": "User Portal",
         "username": username,
-        "message": message
+        "message": message,
+        **get_branding()
     })
 
 
@@ -294,7 +308,8 @@ async def user_send_message_page(
         "default_id": default_id,
         "default_date": default_date,
         "message": message,
-        "error": error
+        "error": error,
+        **get_branding()
     })
 
 
@@ -419,5 +434,6 @@ async def user_history(request: Request, session_token: Optional[str] = Cookie(N
         "request": request,
         "title": "Message History",
         "username": username,
-        "note": "Message history tracking is planned for a future release."
+        "note": "Message history tracking is planned for a future release.",
+        **get_branding()
     })
