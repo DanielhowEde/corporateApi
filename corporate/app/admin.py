@@ -164,7 +164,7 @@ async def admin_projects(
 async def admin_add_project(
     request: Request,
     project_code: str = Form(...),
-    enabled: bool = Form(True),
+    enabled: str = Form("off"),
     admin_session: Optional[str] = Cookie(None)
 ):
     """Add a new project to the whitelist."""
@@ -172,6 +172,7 @@ async def admin_add_project(
         return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
 
     code = project_code.upper().strip()
+    is_enabled = enabled.lower() in ("true", "on", "yes", "1")
 
     if not validate_project_code(code):
         return RedirectResponse(
@@ -180,7 +181,7 @@ async def admin_add_project(
         )
 
     try:
-        whitelist.add_project(code, enabled=enabled)
+        whitelist.add_project(code, enabled=is_enabled)
         logger.info(f"Admin added project: {code}")
         return RedirectResponse(
             url=f"/admin/projects?message=Project+{code}+added+successfully",
@@ -339,14 +340,15 @@ async def admin_add_user(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    enabled: bool = Form(True),
+    enabled: str = Form("off"),
     admin_session: Optional[str] = Cookie(None)
 ):
     """Create a new user account."""
     if not require_admin_auth(admin_session):
         return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    success, message = auth.create_user(username.strip(), password, enabled)
+    is_enabled = enabled.lower() in ("true", "on", "yes", "1")
+    success, message = auth.create_user(username.strip(), password, is_enabled)
 
     if success:
         logger.info(f"Admin created user: {username}")

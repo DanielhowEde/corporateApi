@@ -68,7 +68,7 @@ def _save_users(users: Dict[str, dict]) -> bool:
             json.dump({"users": users}, f, indent=2, sort_keys=True)
             f.flush()
             os.fsync(f.fileno())
-        tmp_path.rename(USERS_FILE_PATH)
+        os.replace(tmp_path, USERS_FILE_PATH)
         return True
     except OSError as e:
         logger.error(f"Failed to save users file: {e}")

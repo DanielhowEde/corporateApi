@@ -134,7 +134,7 @@ class FileStore:
                 os.fsync(f.fileno())
 
             # Step 3: Atomic rename to final destination
-            tmp_path.rename(final_path)
+            os.replace(tmp_path, final_path)
 
             return final_path
 

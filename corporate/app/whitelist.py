@@ -98,7 +98,7 @@ class ProjectWhitelist:
                 json.dump(data, f, indent=2, sort_keys=True)
                 f.flush()
                 os.fsync(f.fileno())
-            tmp_path.rename(self.file_path)
+            os.replace(tmp_path, self.file_path)
         except OSError as e:
             if tmp_path.exists():
                 tmp_path.unlink()
