@@ -1,0 +1,11 @@
+{
+  "users": {
+    "admin": {
+      "created": "2026-02-27T17:03:54.324251",
+      "enabled": true,
+      "must_change_password": true,
+      "password_hash": "4fd7d6bef78cb43560a33c05999b58d1:28249874041dc26f818e6e8d8aa770adafc9b5e26c47590a83cdabae09719e64",
+      "role": "admin"
+    }
+  }
+}

@@ -27,6 +27,17 @@
             align-items: center;
         }
 
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .header-logo {
+            height: 40px;
+            width: auto;
+        }
+
         .header h1 {
             font-size: 1.5rem;
             font-weight: 600;
@@ -280,7 +291,10 @@
 </head>
 <body>
     <header class="header">
-        <h1>Corporate DMZ Admin</h1>
+        <div class="header-left">
+            <img src="/static/TEA.png" alt="Logo" class="header-logo">
+            <h1>Corporate DMZ Admin</h1>
+        </div>
         <span class="badge">CORPORATE NETWORK</span>
     </header>
 

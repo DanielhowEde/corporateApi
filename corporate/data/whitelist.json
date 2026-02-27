@@ -1,0 +1,10 @@
+{
+  "projects": {
+    "AAA": {
+      "enabled": true
+    },
+    "BBB": {
+      "enabled": true
+    }
+  }
+}
