@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI):
 
     # Set dependencies for admin module
     admin.set_whitelist(whitelist)
+    admin.set_gateway_client(gateway_client)
 
     # Set dependencies for user module
     user.set_whitelist(whitelist)

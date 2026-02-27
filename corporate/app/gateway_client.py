@@ -67,6 +67,31 @@ class GatewayClient:
             await self._client.aclose()
             self._client = None
 
+    async def sync_user(self, user_data: Dict[str, Any]) -> None:
+        """
+        Send a user sync event to the DMZ Gateway (best-effort, no retry).
+
+        Called by admin routes when a user is created, updated, enabled,
+        disabled, or deleted. Failures are logged but not raised.
+
+        Args:
+            user_data: Dict with username, password_hash, enabled, must_change_password, action
+        """
+        username = user_data.get("username", "unknown")
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                "/users",
+                json=user_data,
+                headers={"X-Request-ID": get_request_id()}
+            )
+            if response.status_code < 300:
+                logger.info(f"User sync sent to gateway: {username}")
+            else:
+                logger.warning(f"Gateway returned {response.status_code} for user sync: {username}")
+        except Exception as e:
+            logger.warning(f"User sync to gateway failed (non-fatal): username={username}, error={e}")
+
     async def send_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Send a message to the DMZ Gateway.

@@ -1,0 +1,38 @@
+{% extends "user/base.html" %}
+
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Welcome{% if username %}, {{ username }}{% endif %}!</h2>
+    <p>Use this portal to send messages through the DMZ Gateway to the corporate network.</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+    <div class="card">
+        <h2>Send Message</h2>
+        <p class="text-muted mb-4">Compose and send a new message through the DMZ Gateway to corporate.</p>
+        <a href="/user/send" class="btn btn-primary">Send New Message</a>
+    </div>
+
+    <div class="card">
+        <h2>Account</h2>
+        <p class="text-muted mb-4">Change your password or manage your account settings.</p>
+        <a href="/user/change-password" class="btn btn-primary">Change Password</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Quick Reference</h2>
+    <p>All messages must follow the required schema:</p>
+    <ul style="margin: 1rem 0 0 1.5rem;">
+        <li><strong>ID</strong>: Valid UUID (auto-generated)</li>
+        <li><strong>Project</strong>: 3-character code (A-Z, 0-9) - must be authorized on corporate side</li>
+        <li><strong>Test ID</strong>: 3-10 characters</li>
+        <li><strong>Timestamp</strong>: Format <code>YYYY-MM-DDTHH:MM:SS</code></li>
+        <li><strong>Data</strong>: JSON object with string key-value pairs</li>
+    </ul>
+</div>
+{% endblock %}

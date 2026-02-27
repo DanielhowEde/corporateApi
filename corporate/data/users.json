@@ -1,11 +1,26 @@
 {
   "users": {
+    "DanielE": {
+      "created": "2026-02-27T17:22:45.890686",
+      "enabled": true,
+      "must_change_password": true,
+      "password_hash": "55f0ae5d142dc25cd09daa4c1aeb2728:16186e678465f60b6a27893a8090ab25218f18979f3d920988423639af1ddeba",
+      "role": "admin"
+    },
     "admin": {
       "created": "2026-02-27T17:03:54.324251",
       "enabled": true,
       "must_change_password": true,
       "password_hash": "4fd7d6bef78cb43560a33c05999b58d1:28249874041dc26f818e6e8d8aa770adafc9b5e26c47590a83cdabae09719e64",
       "role": "admin"
+    },
+    "test": {
+      "created": "2026-02-27T17:23:02.715307",
+      "enabled": true,
+      "must_change_password": false,
+      "password_hash": "7bf60d5c9e420a52beba834b2d90f826:ff7eb2f60cccbc705ede54ce5f533aaf523fd8dbcc0538366ae2ebb6ece40599",
+      "role": "user",
+      "updated": "2026-02-27T17:25:09.000004"
     }
   }
 }

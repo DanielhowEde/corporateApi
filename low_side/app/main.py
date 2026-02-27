@@ -11,16 +11,20 @@ Security Assumptions:
 """
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from .file_store import FileStore, FileStoreError
 from .gateway_client import GatewayClient, GatewayError, GatewayUnavailableError
 from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
 from .utils import generate_request_id, set_request_id, setup_logging
+from . import auth as low_auth
+from . import user
 
 # Configure logging
 logger = setup_logging("low_side_api")
@@ -42,6 +46,9 @@ async def lifespan(app: FastAPI):
     file_store = FileStore()
     gateway_client = GatewayClient()
 
+    # Set dependencies for user portal
+    user.set_gateway_client(gateway_client)
+
     logger.info(f"Message store: {file_store.master_dir}")
     logger.info(f"Gateway URL: {gateway_client.base_url}")
 
@@ -58,6 +65,14 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Serve static files
+_static_dir = Path(__file__).parent / "static"
+_static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+# Include user portal routes
+app.include_router(user.router)
 
 
 # =============================================================================
@@ -291,3 +306,34 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=ErrorResponse(request_id=request_id).model_dump()
         )
+
+
+@app.post("/dmz/users", tags=["DMZ"])
+async def receive_user_sync(request: Request):
+    """
+    Receive a user sync event from the DMZ Gateway.
+
+    The gateway forwards this from corporate admin when a user is created,
+    updated, enabled, disabled, or deleted.
+
+    **Security:**
+    - Only accepts requests from Gateway (enforced by proxy)
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "Invalid JSON"}
+        )
+
+    success, msg = low_auth.sync_user_from_corporate(body)
+    if success:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "ok", "message": msg}
+        )
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"error": msg}
+    )

@@ -1,0 +1,113 @@
+{% extends "user/base.html" %}
+
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Send Message to Corporate</h2>
+
+    <form action="/user/send" method="post">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="message_id">Message ID (UUID)</label>
+                <input type="text"
+                       id="message_id"
+                       name="message_id"
+                       class="form-control"
+                       value="{{ default_id }}"
+                       required>
+                <p class="form-help">Auto-generated UUID. You can modify if needed.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="project">Project</label>
+                <input type="text"
+                       id="project"
+                       name="project"
+                       class="form-control"
+                       placeholder="ABC"
+                       maxlength="3"
+                       style="text-transform: uppercase;"
+                       required>
+                <p class="form-help">3-character project code (A-Z, 0-9).</p>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="test_id">Test ID</label>
+                <input type="text"
+                       id="test_id"
+                       name="test_id"
+                       class="form-control"
+                       placeholder="ABC001"
+                       minlength="3"
+                       maxlength="10"
+                       required>
+                <p class="form-help">3-10 characters.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="test_status">Test Status</label>
+                <input type="text"
+                       id="test_status"
+                       name="test_status"
+                       class="form-control"
+                       placeholder="Inprogress"
+                       value="Inprogress"
+                       required>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="timestamp">Timestamp</label>
+            <input type="text"
+                   id="timestamp"
+                   name="timestamp"
+                   class="form-control"
+                   value="{{ default_timestamp }}"
+                   required>
+            <p class="form-help">ISO 8601 format: YYYY-MM-DDTHH:MM:SS (e.g. 2026-01-30T11:22:33)</p>
+        </div>
+
+        <div class="form-group">
+            <label for="data_json">Data (JSON Object)</label>
+            <textarea id="data_json"
+                      name="data_json"
+                      class="form-control"
+                      placeholder='{
+  "result": "pass",
+  "note": "test completed"
+}'>{}</textarea>
+            <p class="form-help">String key-value pairs only. Max 20 entries, values up to 128 chars (letters, digits, space, semicolons).</p>
+        </div>
+
+        <button type="submit" class="btn btn-success">
+            Send Message
+        </button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Message Schema Reference</h2>
+    <p class="text-muted mb-4">Your message will be validated against this schema before sending:</p>
+
+    <pre style="background: #f3f4f6; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.9rem;"><code>{
+  "ID": "550e8400-e29b-41d4-a716-446655440000",  // UUID
+  "Project": "AAA",                              // 3 chars, A-Z0-9
+  "Test ID": "ABC001",                           // 3-10 chars
+  "Timestamp": "2026-01-30T11:22:33",            // ISO 8601
+  "Test Status": "Inprogress",
+  "Data": {                                      // Max 20 string key-value pairs
+    "result": "pass",
+    "note": "all checks passed"
+  }
+}</code></pre>
+</div>
+{% endblock %}

@@ -35,6 +35,9 @@ class Config:
 
         # Gateway URL
         "GATEWAY_URL": "http://localhost:8000",
+
+        # Users file path (synced from corporate via gateway)
+        "USERS_FILE_PATH": "./data/users.json",
     }
 
     _instance: Optional["Config"] = None
@@ -95,6 +98,11 @@ class Config:
     def gateway_url(self) -> str:
         """Get the gateway URL."""
         return self._config["GATEWAY_URL"]
+
+    @property
+    def users_file_path(self) -> Path:
+        """Get the users file path."""
+        return Path(self._config["USERS_FILE_PATH"])
 
     def reload(self) -> None:
         """Reload configuration from file and environment."""

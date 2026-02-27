@@ -36,6 +36,7 @@ uvicorn app.main:app --reload --port 8002
 | Corporate Admin | http://localhost:8001/admin/ |
 | Corporate User Portal | http://localhost:8001/user/ |
 | Corporate API Docs | http://localhost:8001/docs |
+| Low-Side User Portal | http://localhost:8002/user/ |
 | Low-Side API Docs | http://localhost:8002/docs |
 
 ## Test Workflow
@@ -81,6 +82,44 @@ Check the mock gateway terminal - you should see:
 
 Or visit http://localhost:8000/messages to see received messages.
 
+## Low-Side User Portal
+
+Users on the low-side can also send messages. Their accounts are created by the corporate
+admin and synced automatically through the gateway.
+
+### 5. Low-Side User Login
+
+1. Go to http://localhost:8002/user/
+2. Login with the same `testuser` credentials created in step 1
+   - On first login you will be asked to change your password
+3. From the home page, click **Send Message**
+
+### 6. Send a Message from Low-Side
+
+1. Fill in the form (same schema as corporate):
+   - **ID**: Auto-generated UUID
+   - **Project**: Type `ABC` (must match a project authorized on corporate)
+   - **Test ID**: e.g., `LST001`
+   - **Test Status**: e.g., `Pass`
+   - **Timestamp**: Auto-filled
+   - **Data**: `{"source": "low-side", "result": "pass"}`
+2. Click Send — the message goes to the mock gateway
+
+Check the mock gateway terminal:
+```
+[GATEWAY] Received message: ID=..., Project=ABC
+[GATEWAY] Saved to: ./received/...json
+```
+
+### How User Sync Works
+
+When the corporate admin creates, enables, disables, or resets a user password:
+1. Corporate calls the gateway `POST /users`
+2. The mock gateway forwards to low-side `POST /dmz/users`
+3. Low-side stores the user in `low_side/data/users.json`
+
+The user can then log in at `http://localhost:8002/user/` with their corporate credentials.
+
 ## API Testing with curl
 
 ### Health Check
@@ -114,10 +153,16 @@ After sending messages:
 
 | Location | Contents |
 |----------|----------|
-| `corporate/data/messages/ABC/` | Messages stored by Corporate API |
-| `mock_gateway/received/` | Messages received by mock gateway |
+| `mock_gateway/received/` | All messages received by gateway (both directions) |
+| `corporate/data/messages/ABC/` | Messages forwarded to corporate by gateway |
+| `low_side/data/messages/ABC/` | Messages forwarded to low-side by gateway |
 | `corporate/data/whitelist.json` | Project whitelist |
-| `corporate/data/users.json` | User accounts |
+| `corporate/data/users.json` | User accounts (corporate) |
+| `low_side/data/users.json` | User accounts synced from corporate via gateway |
+
+**Note:** The mock gateway forwards every received message to both corporate `/dmz/messages`
+and low-side `/dmz/messages`. Corporate requires the project to be whitelisted to store it.
+Low-side stores all valid messages it receives.
 
 ## Configuration
 

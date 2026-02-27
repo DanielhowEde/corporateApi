@@ -42,11 +42,36 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 # Whitelist instance (will be set by main.py)
 whitelist: Optional[ProjectWhitelist] = None
 
+# Gateway client (will be set by main.py)
+gateway_client = None
+
 
 def set_whitelist(wl: ProjectWhitelist) -> None:
     """Set the whitelist instance for admin routes."""
     global whitelist
     whitelist = wl
+
+
+def set_gateway_client(client) -> None:
+    """Set the gateway client for user sync."""
+    global gateway_client
+    gateway_client = client
+
+
+async def _sync_user(username: str, action: str = "upsert") -> None:
+    """Push user data to gateway for low-side sync (best-effort)."""
+    if not gateway_client:
+        return
+    users = auth._load_users()
+    user = users.get(username, {})
+    payload = {
+        "username": username,
+        "action": action,
+        "password_hash": user.get("password_hash", ""),
+        "enabled": user.get("enabled", True),
+        "must_change_password": user.get("must_change_password", True),
+    }
+    await gateway_client.sync_user(payload)
 
 
 def validate_project_code(code: str) -> bool:
@@ -356,6 +381,7 @@ async def admin_add_user(
 
     if success:
         logger.info(f"Admin created user: {username}")
+        await _sync_user(username.strip(), "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
             status_code=status.HTTP_303_SEE_OTHER
@@ -381,6 +407,7 @@ async def admin_enable_user(
 
     if success:
         logger.info(f"Admin enabled user: {username}")
+        await _sync_user(username, "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
             status_code=status.HTTP_303_SEE_OTHER
@@ -405,6 +432,7 @@ async def admin_disable_user(
 
     if success:
         logger.info(f"Admin disabled user: {username}")
+        await _sync_user(username, "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
             status_code=status.HTTP_303_SEE_OTHER
@@ -429,6 +457,7 @@ async def admin_delete_user(
 
     if success:
         logger.info(f"Admin deleted user: {username}")
+        await gateway_client.sync_user({"username": username, "action": "delete"}) if gateway_client else None
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
             status_code=status.HTTP_303_SEE_OTHER
@@ -454,6 +483,7 @@ async def admin_reset_user_password(
 
     if success:
         logger.info(f"Admin reset password for user: {username}")
+        await _sync_user(username, "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
             status_code=status.HTTP_303_SEE_OTHER
