@@ -9,8 +9,103 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
+<!-- ===================== ADMIN ACCOUNTS ===================== -->
+<div class="card">
+    <h2>Add New Admin</h2>
+    <p class="text-muted" style="margin-bottom:1rem;">Admins can log in to the admin panel and manage users and projects.</p>
+    <form action="/admin/admins/add" method="post" class="form-inline">
+        <div class="form-group">
+            <label for="admin_username">Username</label>
+            <input type="text"
+                   id="admin_username"
+                   name="username"
+                   class="form-control"
+                   placeholder="Username (min 3 chars)"
+                   minlength="3"
+                   required>
+        </div>
+        <div class="form-group">
+            <label for="admin_password">Password</label>
+            <input type="password"
+                   id="admin_password"
+                   name="password"
+                   class="form-control"
+                   placeholder="Password (min 6 chars)"
+                   minlength="6"
+                   required>
+        </div>
+        <div class="form-group form-check">
+            <input type="checkbox" id="admin_enabled" name="enabled" value="true" checked>
+            <label for="admin_enabled">Enabled</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Add Admin</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Admin Accounts ({{ admin_count }})</h2>
+
+    {% if admins %}
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for username, enabled, created in admins %}
+            <tr>
+                <td><strong>{{ username }}</strong> <span style="font-size:0.75rem; color:#e53e3e; font-weight:600;">ADMIN</span></td>
+                <td>
+                    {% if enabled %}
+                    <span class="status-badge status-enabled">Enabled</span>
+                    {% else %}
+                    <span class="status-badge status-disabled">Disabled</span>
+                    {% endif %}
+                </td>
+                <td>{{ created[:10] if created else '-' }}</td>
+                <td class="actions">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="showResetForm('admin-{{ username }}')">Reset Password</button>
+
+                    <form action="/admin/admins/{{ username }}/delete" method="post" style="display:inline;"
+                          onsubmit="return confirm('Delete admin {{ username }}? This cannot be undone. The last admin cannot be deleted.');">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            <!-- Hidden password reset form for admin -->
+            <tr id="reset-admin-{{ username }}" style="display: none; background-color: #f7fafc;">
+                <td colspan="4">
+                    <form action="/admin/admins/{{ username }}/reset-password" method="post" class="form-inline">
+                        <div class="form-group">
+                            <label>New Password for {{ username }}</label>
+                            <input type="password"
+                                   name="new_password"
+                                   class="form-control"
+                                   placeholder="New password (min 6 chars)"
+                                   minlength="6"
+                                   required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Update</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="hideResetForm('admin-{{ username }}')">Cancel</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No admin accounts found.</p>
+    {% endif %}
+</div>
+
+<!-- ===================== USER ACCOUNTS ===================== -->
 <div class="card">
     <h2>Add New User</h2>
+    <p class="text-muted" style="margin-bottom:1rem;">Users can log in to the user portal and send messages.</p>
     <form action="/admin/users/add" method="post" class="form-inline">
         <div class="form-group">
             <label for="username">Username</label>
@@ -76,7 +171,7 @@
                     </form>
                     {% endif %}
 
-                    <button type="button" class="btn btn-primary btn-sm" onclick="showResetForm('{{ username }}')">Reset Password</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="showResetForm('user-{{ username }}')">Reset Password</button>
 
                     <form action="/admin/users/{{ username }}/delete" method="post" style="display:inline;"
                           onsubmit="return confirm('Are you sure you want to delete user {{ username }}?');">
@@ -84,14 +179,13 @@
                     </form>
                 </td>
             </tr>
-            <!-- Hidden password reset form -->
-            <tr id="reset-{{ username }}" style="display: none; background-color: #f7fafc;">
+            <!-- Hidden password reset form for user -->
+            <tr id="reset-user-{{ username }}" style="display: none; background-color: #f7fafc;">
                 <td colspan="4">
                     <form action="/admin/users/{{ username }}/reset-password" method="post" class="form-inline">
                         <div class="form-group">
-                            <label for="new_password_{{ username }}">New Password for {{ username }}</label>
+                            <label>New Password for {{ username }}</label>
                             <input type="password"
-                                   id="new_password_{{ username }}"
                                    name="new_password"
                                    class="form-control"
                                    placeholder="New password (min 6 chars)"
@@ -99,7 +193,7 @@
                                    required>
                         </div>
                         <button type="submit" class="btn btn-primary btn-sm">Update</button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="hideResetForm('{{ username }}')">Cancel</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="hideResetForm('user-{{ username }}')">Cancel</button>
                     </form>
                 </td>
             </tr>
@@ -116,17 +210,18 @@
     <ul style="margin: 0.5rem 0 0 1.5rem; color: #718096;">
         <li>Minimum 6 characters</li>
         <li>Passwords are stored with salted SHA-256 hashing</li>
-        <li>Users should change their password after first login</li>
+        <li>New accounts require a password change on first login</li>
+        <li>The last remaining admin account cannot be deleted</li>
     </ul>
 </div>
 
 <script>
-function showResetForm(username) {
-    document.getElementById('reset-' + username).style.display = 'table-row';
+function showResetForm(id) {
+    document.getElementById('reset-' + id).style.display = 'table-row';
 }
 
-function hideResetForm(username) {
-    document.getElementById('reset-' + username).style.display = 'none';
+function hideResetForm(id) {
+    document.getElementById('reset-' + id).style.display = 'none';
 }
 </script>
 {% endblock %}

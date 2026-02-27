@@ -3,14 +3,10 @@ Message models and validation for DMZ API.
 """
 import re
 import uuid
-from typing import Any, Dict, Optional
+from datetime import datetime
+from typing import Dict
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-
-
-class MessageData(BaseModel):
-    """Flexible data object allowing arbitrary key-value pairs."""
-    model_config = {"extra": "allow"}
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Message(BaseModel):
@@ -18,22 +14,23 @@ class Message(BaseModel):
     DMZ Message schema with strict validation.
 
     Top-level fields are strictly enforced (no extra fields allowed).
-    The Data field is flexible and allows arbitrary nested content.
+    Field aliases map Python identifiers to the JSON keys with spaces.
+
+    Use Message.model_validate(dict) to parse (not Message(**dict))
+    Use .model_dump(by_alias=True) to serialize back to original JSON keys.
     """
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     ID: str = Field(..., description="UUID identifier for the message")
     Project: str = Field(..., description="3-character project code (A-Z0-9)")
-    TestID: str = Field(..., description="Test identifier")
-    Area: str = Field(..., description="Area name")
-    Status: str = Field(..., description="Current status")
-    Date: str = Field(..., description="Date in ddMMyyyyThh:mm:ss format")
-    Data: Dict[str, Any] = Field(..., description="Flexible data object")
+    test_id: str = Field(..., alias="Test ID", description="Test identifier (3-10 chars)")
+    Timestamp: str = Field(..., description="ISO 8601 datetime (e.g. 2026-01-30T11:22:33)")
+    test_status: str = Field(..., alias="Test Status", description="Current test status")
+    Data: Dict[str, str] = Field(..., description="String key-value pairs (max 20 entries)")
 
     @field_validator("ID")
     @classmethod
     def validate_uuid(cls, v: str) -> str:
-        """Validate ID is a valid UUID."""
         try:
             uuid.UUID(v)
         except (ValueError, TypeError):
@@ -43,28 +40,43 @@ class Message(BaseModel):
     @field_validator("Project")
     @classmethod
     def validate_project(cls, v: str) -> str:
-        """Validate Project is exactly 3 alphanumeric characters (uppercase)."""
         if not re.match(r"^[A-Z0-9]{3}$", v):
             raise ValueError("Project must be exactly 3 uppercase alphanumeric characters")
         return v
 
-    @field_validator("Date")
+    @field_validator("test_id")
     @classmethod
-    def validate_date(cls, v: str) -> str:
-        """Validate Date matches ddMMyyyyThh:mm:ss format exactly."""
-        # Pattern: ddMMyyyyThh:mm:ss
-        # dd: 01-31, MM: 01-12, yyyy: 4 digits, T literal, hh:mm:ss
-        pattern = r"^[0-3][0-9][0-1][0-9][0-9]{4}T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]$"
-        if not re.match(pattern, v):
-            raise ValueError("Date must match ddMMyyyyThh:mm:ss format")
+    def validate_test_id(cls, v: str) -> str:
+        if not (3 <= len(v) <= 10):
+            raise ValueError("Test ID must be 3-10 characters")
+        return v
+
+    @field_validator("Timestamp")
+    @classmethod
+    def validate_timestamp(cls, v: str) -> str:
+        try:
+            datetime.fromisoformat(v)
+        except ValueError:
+            raise ValueError("Timestamp must be a valid ISO 8601 datetime (e.g. 2026-01-30T11:22:33)")
         return v
 
     @field_validator("Data")
     @classmethod
-    def validate_data_is_dict(cls, v: Any) -> Dict[str, Any]:
-        """Ensure Data is a dictionary/object."""
+    def validate_data(cls, v: Dict[str, str]) -> Dict[str, str]:
         if not isinstance(v, dict):
             raise ValueError("Data must be an object")
+        if len(v) > 20:
+            raise ValueError("Data must not have more than 20 properties")
+        pattern = re.compile(r"^[a-zA-Z0-9 ;]+$")
+        for key, value in v.items():
+            if not isinstance(value, str):
+                raise ValueError(f"Data values must be strings (key: '{key}')")
+            if not (1 <= len(value) <= 128):
+                raise ValueError(f"Data['{key}'] must be 1-128 characters")
+            if not pattern.match(value):
+                raise ValueError(
+                    f"Data['{key}'] contains invalid characters (allowed: a-z A-Z 0-9 space ;)"
+                )
         return v
 
 

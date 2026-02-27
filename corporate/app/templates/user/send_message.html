@@ -44,44 +44,34 @@
                        id="test_id"
                        name="test_id"
                        class="form-control"
-                       placeholder="AAA-1112"
+                       placeholder="ABC001"
+                       minlength="3"
+                       maxlength="10"
                        required>
+                <p class="form-help">3-10 characters.</p>
             </div>
 
             <div class="form-group">
-                <label for="area">Area</label>
+                <label for="test_status">Test Status</label>
                 <input type="text"
-                       id="area"
-                       name="area"
-                       class="form-control"
-                       placeholder="Area Name"
-                       required>
-            </div>
-        </div>
-
-        <div class="form-row">
-            <div class="form-group">
-                <label for="msg_status">Status</label>
-                <input type="text"
-                       id="msg_status"
-                       name="msg_status"
+                       id="test_status"
+                       name="test_status"
                        class="form-control"
                        placeholder="Inprogress"
                        value="Inprogress"
                        required>
             </div>
+        </div>
 
-            <div class="form-group">
-                <label for="date">Date</label>
-                <input type="text"
-                       id="date"
-                       name="date"
-                       class="form-control"
-                       value="{{ default_date }}"
-                       pattern="[0-3][0-9][0-1][0-9][0-9]{4}T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]"
-                       required>
-                <p class="form-help">Format: ddMMyyyyThh:mm:ss (e.g., 30012026T11:22:33)</p>
-            </div>
+        <div class="form-group">
+            <label for="timestamp">Timestamp</label>
+            <input type="text"
+                   id="timestamp"
+                   name="timestamp"
+                   class="form-control"
+                   value="{{ default_timestamp }}"
+                   required>
+            <p class="form-help">ISO 8601 format: YYYY-MM-DDTHH:MM:SS (e.g. 2026-01-30T11:22:33)</p>
         </div>
 
         <div class="form-group">
@@ -90,10 +80,10 @@
                       name="data_json"
                       class="form-control"
                       placeholder='{
-  "key": "value",
-  "name": "john smith"
+  "result": "pass",
+  "note": "test completed"
 }'>{}</textarea>
-            <p class="form-help">Enter a valid JSON object. This can contain any custom data.</p>
+            <p class="form-help">String key-value pairs only. Max 20 entries, values up to 128 chars (letters, digits, space, semicolons).</p>
         </div>
 
         <button type="submit" class="btn btn-success">
@@ -109,12 +99,12 @@
     <pre style="background: #f3f4f6; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.9rem;"><code>{
   "ID": "550e8400-e29b-41d4-a716-446655440000",  // UUID
   "Project": "AAA",                              // 3 chars, A-Z0-9
-  "TestID": "AAA-1112",
-  "Area": "Area Name",
-  "Status": "Inprogress",
-  "Date": "30012026T11:22:33",                   // ddMMyyyyThh:mm:ss
-  "Data": {                                      // Any JSON object
-    "key": "value"
+  "Test ID": "ABC001",                           // 3-10 chars
+  "Timestamp": "2026-01-30T11:22:33",            // ISO 8601
+  "Test Status": "Inprogress",
+  "Data": {                                      // Max 20 string key-value pairs
+    "result": "pass",
+    "note": "all checks passed"
   }
 }</code></pre>
 </div>

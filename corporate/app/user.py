@@ -298,7 +298,7 @@ async def user_send_message_page(
     # Generate default values
     default_id = str(uuid.uuid4())
     now = datetime.now()
-    default_date = now.strftime("%d%m%YT%H:%M:%S")
+    default_timestamp = now.strftime("%Y-%m-%dT%H:%M:%S")
 
     return templates.TemplateResponse("user/send_message.html", {
         "request": request,
@@ -306,7 +306,7 @@ async def user_send_message_page(
         "username": username,
         "projects": projects,
         "default_id": default_id,
-        "default_date": default_date,
+        "default_timestamp": default_timestamp,
         "message": message,
         "error": error,
         **get_branding()
@@ -319,9 +319,8 @@ async def user_send_message_submit(
     message_id: str = Form(...),
     project: str = Form(...),
     test_id: str = Form(...),
-    area: str = Form(...),
-    msg_status: str = Form(...),
-    date: str = Form(...),
+    timestamp: str = Form(...),
+    test_status: str = Form(...),
     data_json: str = Form("{}"),
     session_token: Optional[str] = Cookie(None)
 ):
@@ -356,20 +355,19 @@ async def user_send_message_submit(
             status_code=status.HTTP_303_SEE_OTHER
         )
 
-    # Build message
+    # Build message using alias keys (spaces in field names require model_validate)
     message_data = {
         "ID": message_id.strip(),
         "Project": project.upper().strip(),
-        "TestID": test_id.strip(),
-        "Area": area.strip(),
-        "Status": msg_status.strip(),
-        "Date": date.strip(),
+        "Test ID": test_id.strip(),
+        "Timestamp": timestamp.strip(),
+        "Test Status": test_status.strip(),
         "Data": data_dict
     }
 
     # Validate message schema
     try:
-        validated_message = Message(**message_data)
+        validated_message = Message.model_validate(message_data)
     except Exception as e:
         logger.warning(f"Message validation failed: {e}")
         error_msg = str(e)[:100].replace(" ", "+")
@@ -394,7 +392,7 @@ async def user_send_message_submit(
         )
 
     try:
-        await gateway_client.send_message(validated_message.model_dump())
+        await gateway_client.send_message(validated_message.model_dump(by_alias=True))
         logger.info(f"User {username} sent message: {validated_message.ID}")
         return RedirectResponse(
             url=f"/user/send?message=Message+sent+successfully!+ID:+{validated_message.ID}",

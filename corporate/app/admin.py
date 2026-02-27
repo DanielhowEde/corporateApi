@@ -77,12 +77,14 @@ async def admin_login_page(request: Request, error: str = ""):
 @router.post("/login", name="admin_login_submit")
 async def admin_login_submit(
     request: Request,
+    username: str = Form(...),
     password: str = Form(...)
 ):
     """Process admin login."""
-    if auth.verify_admin_password(password):
-        token = auth.create_admin_session()
-        logger.info("Admin logged in successfully")
+    username = username.strip()
+    if auth.verify_admin_credentials(username, password):
+        token = auth.create_admin_session(username)
+        logger.info(f"Admin logged in: {username}")
         response = RedirectResponse(
             url="/admin/",
             status_code=status.HTTP_303_SEE_OTHER
@@ -96,9 +98,9 @@ async def admin_login_submit(
         )
         return response
 
-    logger.warning("Failed admin login attempt")
+    logger.warning(f"Failed admin login attempt: {username}")
     return RedirectResponse(
-        url="/admin/login?error=Invalid+password",
+        url="/admin/login?error=Invalid+username+or+password",
         status_code=status.HTTP_303_SEE_OTHER
     )
 
@@ -322,13 +324,15 @@ async def admin_users(
         return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
 
     users = auth.list_users()
-    user_count = len(users)
+    admins = auth.list_admins()
 
     return templates.TemplateResponse("admin/users.html", {
         "request": request,
         "title": "User Management",
         "users": users,
-        "user_count": user_count,
+        "admins": admins,
+        "user_count": len(users),
+        "admin_count": len(admins),
         "message": message,
         "error": error,
         **get_branding()
@@ -450,6 +454,88 @@ async def admin_reset_user_password(
 
     if success:
         logger.info(f"Admin reset password for user: {username}")
+        return RedirectResponse(
+            url=f"/admin/users?message={message.replace(' ', '+')}",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    return RedirectResponse(
+        url=f"/admin/users?error={message.replace(' ', '+')}",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+# =============================================================================
+# Admin User Management
+# =============================================================================
+
+@router.post("/admins/add", name="admin_add_admin")
+async def admin_add_admin(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    enabled: str = Form("off"),
+    admin_session: Optional[str] = Cookie(None)
+):
+    """Create a new admin account."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    is_enabled = enabled.lower() in ("true", "on", "yes", "1")
+    success, message = auth.create_admin_user(username.strip(), password, is_enabled)
+
+    if success:
+        logger.info(f"Admin created admin user: {username}")
+        return RedirectResponse(
+            url=f"/admin/users?message={message.replace(' ', '+')}",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    logger.warning(f"Admin failed to create admin user: {username}, error={message}")
+    return RedirectResponse(
+        url=f"/admin/users?error={message.replace(' ', '+')}",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/admins/{username}/delete", name="admin_delete_admin")
+async def admin_delete_admin(
+    username: str,
+    admin_session: Optional[str] = Cookie(None)
+):
+    """Delete an admin account (cannot delete the last admin)."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    success, message = auth.delete_admin_user(username)
+
+    if success:
+        logger.info(f"Admin deleted admin user: {username}")
+        return RedirectResponse(
+            url=f"/admin/users?message={message.replace(' ', '+')}",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    return RedirectResponse(
+        url=f"/admin/users?error={message.replace(' ', '+')}",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/admins/{username}/reset-password", name="admin_reset_admin_password")
+async def admin_reset_admin_password(
+    username: str,
+    new_password: str = Form(...),
+    admin_session: Optional[str] = Cookie(None)
+):
+    """Reset an admin's password."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    success, message = auth.update_user_password(username, new_password)
+
+    if success:
+        logger.info(f"Admin reset password for admin: {username}")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
             status_code=status.HTTP_303_SEE_OTHER

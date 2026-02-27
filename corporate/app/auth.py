@@ -2,9 +2,13 @@
 Authentication and user management for Corporate DMZ API.
 
 Provides:
-- Admin authentication (password-based)
+- Admin authentication (file-based, multi-admin)
 - User account management (admin creates users)
 - Session management for both admin and users
+
+User roles:
+- "admin": Can access admin panel, manage users and projects
+- "user": Can access user portal, send messages
 """
 import hashlib
 import json
@@ -20,7 +24,7 @@ logger = setup_logging("auth")
 
 
 # Configuration from environment
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+_DEFAULT_ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 USERS_FILE_PATH = Path(os.environ.get("USERS_FILE_PATH", "./data/users.json"))
 SESSION_SECRET = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
 
@@ -77,25 +81,57 @@ def _save_users(users: Dict[str, dict]) -> bool:
         return False
 
 
+def _ensure_default_admin() -> None:
+    """
+    Create the default admin account from env var if no admin users exist.
+    Called on module load so there is always at least one admin.
+    """
+    users = _load_users()
+    has_admin = any(u.get("role") == "admin" for u in users.values())
+    if not has_admin:
+        users["admin"] = {
+            "password_hash": _hash_password(_DEFAULT_ADMIN_PASSWORD),
+            "role": "admin",
+            "enabled": True,
+            "must_change_password": True,
+            "created": datetime.now().isoformat()
+        }
+        _save_users(users)
+        logger.info("Default admin account created")
+
+
+# Initialise default admin on import
+_ensure_default_admin()
+
+
 # =============================================================================
 # Admin Authentication
 # =============================================================================
 
-def verify_admin_password(password: str) -> bool:
-    """Verify admin password."""
-    return password == ADMIN_PASSWORD
+def verify_admin_credentials(username: str, password: str) -> bool:
+    """Verify admin username and password."""
+    users = _load_users()
+    user = users.get(username)
+    if not user:
+        return False
+    if user.get("role") != "admin":
+        return False
+    if not user.get("enabled", True):
+        logger.warning(f"Login attempt for disabled admin: {username}")
+        return False
+    return _verify_password_hash(password, user.get("password_hash", ""))
 
 
-def create_admin_session() -> str:
+def create_admin_session(username: str) -> str:
     """Create a new admin session."""
     token = secrets.token_urlsafe(32)
     expiry = datetime.now().timestamp() + (8 * 60 * 60)  # 8 hours
     active_sessions[token] = {
         "type": "admin",
-        "username": "admin",
+        "username": username,
         "expiry": expiry
     }
-    logger.info("Admin session created")
+    logger.info(f"Admin session created: {username}")
     return token
 
 
@@ -112,6 +148,19 @@ def verify_admin_session(token: Optional[str]) -> bool:
     return True
 
 
+def get_admin_username_from_session(token: Optional[str]) -> Optional[str]:
+    """Get the admin username from a valid session token."""
+    if not token or token not in active_sessions:
+        return None
+    session = active_sessions[token]
+    if session["type"] != "admin":
+        return None
+    if datetime.now().timestamp() > session["expiry"]:
+        del active_sessions[token]
+        return None
+    return session["username"]
+
+
 # =============================================================================
 # User Authentication
 # =============================================================================
@@ -121,6 +170,8 @@ def verify_user_credentials(username: str, password: str) -> bool:
     users = _load_users()
     user = users.get(username)
     if not user:
+        return False
+    if user.get("role", "user") != "user":
         return False
     if not user.get("enabled", True):
         logger.warning(f"Login attempt for disabled user: {username}")
@@ -164,7 +215,75 @@ def invalidate_session(token: str) -> None:
 
 
 # =============================================================================
-# User Management (Admin Functions)
+# Admin User Management
+# =============================================================================
+
+def create_admin_user(username: str, password: str, enabled: bool = True) -> Tuple[bool, str]:
+    """
+    Create a new admin account.
+    Returns (success, message).
+    """
+    if not username or len(username) < 3:
+        return False, "Username must be at least 3 characters"
+    if not password or len(password) < 6:
+        return False, "Password must be at least 6 characters"
+
+    users = _load_users()
+    if username in users:
+        return False, f"Username '{username}' already exists"
+
+    users[username] = {
+        "password_hash": _hash_password(password),
+        "role": "admin",
+        "enabled": enabled,
+        "must_change_password": True,
+        "created": datetime.now().isoformat()
+    }
+
+    if _save_users(users):
+        logger.info(f"Admin user created: {username}")
+        return True, f"Admin '{username}' created successfully"
+    return False, "Failed to save admin user"
+
+
+def delete_admin_user(username: str) -> Tuple[bool, str]:
+    """
+    Delete an admin account.
+    Prevents deleting the last remaining admin.
+    """
+    users = _load_users()
+    if username not in users:
+        return False, f"Admin '{username}' not found"
+    if users[username].get("role") != "admin":
+        return False, f"'{username}' is not an admin"
+
+    # Count remaining admins
+    admin_count = sum(1 for u in users.values() if u.get("role") == "admin")
+    if admin_count <= 1:
+        return False, "Cannot delete the last admin account"
+
+    del users[username]
+    if _save_users(users):
+        logger.info(f"Admin user deleted: {username}")
+        return True, f"Admin '{username}' deleted"
+    return False, "Failed to save changes"
+
+
+def list_admins() -> List[Tuple[str, bool, str]]:
+    """
+    List all admin users.
+    Returns list of (username, enabled, created_date).
+    """
+    users = _load_users()
+    return [
+        (username, user.get("enabled", True), user.get("created", ""))
+        for username, user in sorted(users.items())
+        if user.get("role") == "admin"
+    ]
+
+
+# =============================================================================
+# Regular User Management (Admin Functions)
 # =============================================================================
 
 def create_user(username: str, password: str, enabled: bool = True, must_change_password: bool = True) -> Tuple[bool, str]:
@@ -179,10 +298,11 @@ def create_user(username: str, password: str, enabled: bool = True, must_change_
 
     users = _load_users()
     if username in users:
-        return False, f"User '{username}' already exists"
+        return False, f"Username '{username}' already exists"
 
     users[username] = {
         "password_hash": _hash_password(password),
+        "role": "user",
         "enabled": enabled,
         "must_change_password": must_change_password,
         "created": datetime.now().isoformat()
@@ -195,7 +315,7 @@ def create_user(username: str, password: str, enabled: bool = True, must_change_
 
 
 def update_user_password(username: str, new_password: str, clear_must_change: bool = True) -> Tuple[bool, str]:
-    """Update a user's password."""
+    """Update a user's or admin's password."""
     if not new_password or len(new_password) < 6:
         return False, "Password must be at least 6 characters"
 
@@ -209,7 +329,7 @@ def update_user_password(username: str, new_password: str, clear_must_change: bo
         users[username]["must_change_password"] = False
 
     if _save_users(users):
-        logger.info(f"Password updated for user: {username}")
+        logger.info(f"Password updated for: {username}")
         return True, f"Password updated for '{username}'"
     return False, "Failed to save changes"
 
@@ -250,10 +370,12 @@ def disable_user(username: str) -> Tuple[bool, str]:
 
 
 def delete_user(username: str) -> Tuple[bool, str]:
-    """Delete a user account."""
+    """Delete a regular user account."""
     users = _load_users()
     if username not in users:
         return False, f"User '{username}' not found"
+    if users[username].get("role") == "admin":
+        return False, f"'{username}' is an admin — use delete admin instead"
 
     del users[username]
     if _save_users(users):
@@ -264,16 +386,17 @@ def delete_user(username: str) -> Tuple[bool, str]:
 
 def list_users() -> List[Tuple[str, bool, str]]:
     """
-    List all users.
+    List all regular (non-admin) users.
     Returns list of (username, enabled, created_date).
     """
     users = _load_users()
     return [
         (username, user.get("enabled", True), user.get("created", ""))
         for username, user in sorted(users.items())
+        if user.get("role", "user") == "user"
     ]
 
 
 def get_user_count() -> int:
-    """Get the number of users."""
-    return len(_load_users())
+    """Get the number of regular users."""
+    return len([u for u in _load_users().values() if u.get("role", "user") == "user"])

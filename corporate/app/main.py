@@ -227,7 +227,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
 
     # Validate message schema
     try:
-        validated_message = Message(**message)
+        validated_message = Message.model_validate(message)
     except ValidationError as e:
         logger.warning(f"Schema validation failed: errors={e.errors()}")
         return JSONResponse(
@@ -252,7 +252,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
 
     # Forward to gateway
     try:
-        await gateway_client.send_message(validated_message.model_dump())
+        await gateway_client.send_message(validated_message.model_dump(by_alias=True))
         logger.info(f"Message sent successfully: message_id={message_id}")
 
         return SuccessResponse(
@@ -319,7 +319,7 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
 
     # Validate message schema
     try:
-        validated_message = Message(**message)
+        validated_message = Message.model_validate(message)
     except ValidationError as e:
         logger.warning(f"Schema validation failed: errors={e.errors()}")
         return JSONResponse(
@@ -344,7 +344,7 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
 
     # Write to disk atomically
     try:
-        file_path = file_store.write_message(validated_message.model_dump())
+        file_path = file_store.write_message(validated_message.model_dump(by_alias=True))
         logger.info(f"Message written to disk: message_id={message_id}, path={file_path}")
 
         return SuccessResponse(
