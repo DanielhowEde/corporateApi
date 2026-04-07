@@ -32,6 +32,7 @@ class Message(BaseModel):
     Timestamp: str = Field(..., alias="Date", description="ISO 8601 datetime")
     test_status: str = Field(..., alias="Status", description="Current test status")
     Data: Dict[str, str] = Field(..., description="String key-value pairs (max 20 entries)")
+    
     @field_validator("ID")
     @classmethod
     def validate_uuid(cls, v: str) -> str:

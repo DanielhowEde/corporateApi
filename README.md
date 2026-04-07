@@ -406,3 +406,17 @@ server {
 ## License
 
 Internal use only.
+
+
+## Enhancement Notes
+
+1. Before a message can be sent it will require a certificate to be wrapped around it this mean that we need to send it
+2. we need to get wrapper and apply it to the message
+3. We need to wait till the cert has expired before sending the message.
+4. check box on message which is checked by default for autosend only applicable to manually created messages
+5. Need to be able to see where the messages are being sent. (info box at bottom of screen so we can see errors coming back.)
+6. All errors need to be stored in error dir for application both high and low side
+7. Create .sh file to clear out any json over 1 day old from directories.
+8. Instruction for cron job to run at certain intervals.
+9. Need the ability to create keys
+10. 
