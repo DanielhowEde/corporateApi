@@ -119,6 +119,19 @@ async def verify_gateway_origin(request: Request) -> bool:
     return True
 
 
+def _store_error(error_type: str, message: str, message_id: str = "", request_id: str = ""):
+    """Best-effort write of an error record to the error directory."""
+    try:
+        file_store.write_error({
+            "error_type": error_type,
+            "message": message,
+            "message_id": message_id,
+            "request_id": request_id,
+        })
+    except Exception as e:
+        logger.warning(f"Failed to write error record: {e}")
+
+
 # =============================================================================
 # Error Handlers
 # =============================================================================
@@ -224,6 +237,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
 
     except GatewayUnavailableError as e:
         logger.error(f"Gateway unavailable: message_id={message_id}, error={e}")
+        _store_error("gateway_unavailable", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=ErrorResponse(request_id=request_id).model_dump()
@@ -231,6 +245,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
 
     except GatewayError as e:
         logger.error(f"Gateway error: message_id={message_id}, error={e}")
+        _store_error("gateway_error", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content=ErrorResponse(request_id=request_id).model_dump()
@@ -302,6 +317,7 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
 
     except FileStoreError as e:
         logger.error(f"Failed to write message: message_id={message_id}, error={e}")
+        _store_error("file_write_error", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=ErrorResponse(request_id=request_id).model_dump()

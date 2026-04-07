@@ -41,6 +41,12 @@ class Config:
         # Gateway URL
         "GATEWAY_URL": "http://localhost:8000",
 
+        # Certificate Gateway URL (wraps messages with JWT before sending)
+        "CERT_GATEWAY_URL": "https://cert-gateway.example.com",
+
+        # Error directory for storing application errors
+        "ERROR_DIR": "./data/errors",
+
         # Whitelist file path
         "WHITELIST_FILE_PATH": "./data/whitelist.json",
 
@@ -122,6 +128,16 @@ class Config:
     def users_file_path(self) -> Path:
         """Get the users file path."""
         return Path(self._config["USERS_FILE_PATH"])
+
+    @property
+    def cert_gateway_url(self) -> str:
+        """Get the certificate gateway URL."""
+        return self._config["CERT_GATEWAY_URL"]
+
+    @property
+    def error_dir(self) -> Path:
+        """Get the error directory for storing application errors."""
+        return Path(self._config["ERROR_DIR"])
 
     @property
     def admin_password(self) -> str:

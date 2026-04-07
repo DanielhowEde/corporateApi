@@ -41,8 +41,9 @@ repo/
 │   ├── app/
 │   │   ├── main.py           # FastAPI application
 │   │   ├── models.py         # Pydantic models & validation
-│   │   ├── file_store.py     # Atomic file writing
-│   │   ├── gateway_client.py # HTTP client for Gateway
+│   │   ├── file_store.py     # Atomic file writing + error storage
+│   │   ├── gateway_client.py # HTTP client for Gateway (with cert wrapping)
+│   │   ├── cert_client.py    # HTTP client for Certificate Gateway (JWT)
 │   │   ├── whitelist.py      # Project whitelist (JSON file)
 │   │   ├── admin.py          # Admin web interface routes
 │   │   ├── user.py           # User web interface routes
@@ -55,6 +56,7 @@ repo/
 ├── api-contracts/
 │   ├── low-side-api.yaml     # OpenAPI spec for LOW-SIDE
 │   └── corporate-api.yaml    # OpenAPI spec for CORPORATE
+├── cleanup.sh                # Removes JSON files older than 1 day
 └── README.md
 ```
 
@@ -408,16 +410,181 @@ server {
 Internal use only.
 
 
-## Enhancement Notes
+## Certificate Gateway (JWT Wrapping)
 
-1. Before a message can be sent it will require a certificate to be wrapped around it this mean that we need to send it
-2. we need to get wrapper and apply it to the message
-3. We need to wait till the cert has expired before sending the message.
-4. check box on message which is checked by default for autosend only applicable to manually created messages
-5. Need to be able to see where the messages are being sent. (info box at bottom of screen so we can see errors coming back.)
-6. All errors need to be stored in error dir for application both high and low side
-7. Create .sh file to clear out any json over 1 day old from directories.
-8. Instruction for cron job to run at certain intervals.
-9. Need the ability to create keys
-10. Instructions for setting up.
+Before messages are sent to the DMZ Gateway, the corporate (high-side) service sends them to an external **Certificate Gateway** to be wrapped with a signed JWT token.
+
+### Flow
+
+```
+Message → Cert Gateway (/wrap) → JWT-wrapped message → DMZ Gateway (/messages)
+```
+
+### Configuration
+
+Set `CERT_GATEWAY_URL` in environment or `config.json`:
+
+```bash
+export CERT_GATEWAY_URL=https://cert-gateway.your-org.com
+```
+
+Default placeholder: `https://cert-gateway.example.com`
+
+The cert gateway is expected to expose a `POST /wrap` endpoint that accepts a message JSON body and returns:
+
+```json
+{
+  "token": "<signed JWT>",
+  "expires_at": "2026-04-08T14:30:00",
+  "message": { ... }
+}
+```
+
+### Auto-Send
+
+When sending messages from the user portal, an **Auto-send** checkbox (checked by default) controls whether the message is forwarded to the DMZ Gateway immediately after cert wrapping, or held for manual release later.
+
+## Error Storage
+
+All application errors (gateway failures, file write errors, etc.) are stored as JSON files in `./data/errors/` on both corporate and low-side services.
+
+Error files are named `{error_id}.json` and contain:
+
+```json
+{
+  "error_id": "uuid",
+  "timestamp": "2026-04-07T10:30:00",
+  "error_type": "gateway_unavailable",
+  "message": "Gateway unavailable after 3 attempts",
+  "message_id": "uuid",
+  "request_id": "uuid"
+}
+```
+
+Configure the error directory:
+
+```bash
+export ERROR_DIR=./data/errors
+```
+
+## Cleanup Script
+
+`cleanup.sh` removes JSON files older than 1 day from all data directories (messages, tmp, errors) on both services.
+
+```bash
+# Preview what would be deleted
+./cleanup.sh --dry-run
+
+# Run cleanup
+./cleanup.sh
+```
+
+### Cron Job Setup
+
+Schedule the cleanup to run daily (e.g., at 2:00 AM):
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line (adjust path to your installation):
+0 2 * * * /path/to/API-DMZ-API/cleanup.sh >> /var/log/dmz-cleanup.log 2>&1
+```
+
+For more frequent cleanup (e.g., every 6 hours):
+
+```bash
+0 */6 * * * /path/to/API-DMZ-API/cleanup.sh >> /var/log/dmz-cleanup.log 2>&1
+```
+
+Verify your cron entry:
+
+```bash
+crontab -l
+```
+
+## Full Setup Instructions
+
+### Prerequisites
+
+- Python 3.10+
+- pip
+- (Production) Nginx/Envoy reverse proxy with mTLS certificates
+- Access to the Certificate Gateway service (URL from your infrastructure team)
+
+### Quick Start (Development)
+
+```bash
+# 1. Clone the repository
+git clone <repo-url>
+cd API-DMZ-API
+
+# 2. Install dependencies for all services
+install_deps.bat          # Windows
+# or manually:
+pip install -r corporate/requirements.txt
+pip install -r low_side/requirements.txt
+pip install -r mock_gateway/requirements.txt
+
+# 3. Start all services
+start_services.bat        # Windows (starts 3 terminal windows)
+# or manually:
+cd corporate   && python -m uvicorn app.main:app --port 8001 --reload &
+cd low_side    && python -m uvicorn app.main:app --port 8002 --reload &
+cd mock_gateway && python -m uvicorn main:app    --port 8000 --reload &
+
+# 4. Access the services
+# Corporate Admin:       http://localhost:8001/admin/  (admin/admin123)
+# Corporate User Portal: http://localhost:8001/user/
+# Low-Side User Portal:  http://localhost:8002/user/
+# Mock Gateway:          http://localhost:8000/docs
+# API Docs:              http://localhost:8001/docs, http://localhost:8002/docs
+```
+
+### Production Deployment
+
+1. **Set environment variables** (or create `config.json` in each service directory):
+
+   ```bash
+   # Corporate
+   export GATEWAY_URL=https://gateway.dmz.example.com
+   export CERT_GATEWAY_URL=https://cert-gateway.your-org.com
+   export ADMIN_PASSWORD=<strong-password>
+   export MASTER_DIR=/var/data/corporate/messages
+   export TMP_DIR=/var/data/corporate/tmp
+   export ERROR_DIR=/var/data/corporate/errors
+   export USERS_FILE_PATH=/var/data/corporate/users.json
+   export WHITELIST_FILE_PATH=/var/data/corporate/whitelist.json
+
+   # Low-side
+   export GATEWAY_URL=https://gateway.dmz.example.com
+   export MASTER_DIR=/var/data/lowside/messages
+   export TMP_DIR=/var/data/lowside/tmp
+   export ERROR_DIR=/var/data/lowside/errors
+   export USERS_FILE_PATH=/var/data/lowside/users.json
+   ```
+
+2. **Configure reverse proxy** with mTLS (see Reverse Proxy Configuration section above)
+
+3. **Set up cron job** for cleanup:
+
+   ```bash
+   0 2 * * * /opt/dmz-api/cleanup.sh >> /var/log/dmz-cleanup.log 2>&1
+   ```
+
+4. **Initialize whitelist** (corporate only):
+
+   ```bash
+   cd corporate
+   python scripts/whitelist_admin.py add AAA
+   python scripts/whitelist_admin.py add BBB
+   ```
+
+5. **Start services** via systemd, supervisor, or your preferred process manager.
+
+## Enhancement Backlog
+
+- Key generation and management UI (item 9)
+- Message history page with filtering and search
+- Pending message queue for manual send (when auto-send is off)
 

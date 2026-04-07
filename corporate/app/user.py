@@ -322,14 +322,14 @@ async def user_send_message_submit(
     timestamp: str = Form(...),
     test_status: str = Form(...),
     data_json: str = Form("{}"),
+    auto_send: Optional[str] = Form(None),
     session_token: Optional[str] = Cookie(None)
 ):
-    """Handle message form submission."""
+    """Handle message form submission with cert wrapping and auto-send support."""
     redirect, username = require_auth(session_token)
     if redirect:
         return redirect
 
-    # Check if password change is required
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
@@ -337,6 +337,18 @@ async def user_send_message_submit(
         )
 
     from .gateway_client import GatewayError, GatewayUnavailableError
+    from .cert_client import CertGatewayError, CertGatewayUnavailableError
+    from datetime import datetime as dt
+
+    send_log = []
+    should_auto_send = auto_send == "on"
+
+    def log_entry(level: str, message: str):
+        send_log.append({
+            "time": dt.now().strftime("%H:%M:%S"),
+            "level": level,
+            "message": message
+        })
 
     # Parse the data JSON
     try:
@@ -355,7 +367,7 @@ async def user_send_message_submit(
             status_code=status.HTTP_303_SEE_OTHER
         )
 
-    # Build message using alias keys (spaces in field names require model_validate)
+    # Build message using alias keys
     message_data = {
         "ID": message_id.strip(),
         "Project": project.upper().strip(),
@@ -368,6 +380,7 @@ async def user_send_message_submit(
     # Validate message schema
     try:
         validated_message = Message.model_validate(message_data)
+        log_entry("info", f"Message validated: {validated_message.ID}")
     except Exception as e:
         logger.warning(f"Message validation failed: {e}")
         error_msg = str(e)[:100].replace(" ", "+")
@@ -384,32 +397,109 @@ async def user_send_message_submit(
             status_code=status.HTTP_303_SEE_OTHER
         )
 
-    # Send to gateway
+    log_entry("info", f"Project {validated_message.Project} authorized")
+
     if not gateway_client:
         return RedirectResponse(
             url=f"/user/send?error=Gateway+client+not+configured",
             status_code=status.HTTP_303_SEE_OTHER
         )
 
+    # Send to gateway (cert wrapping + auto_send handled inside gateway_client)
     try:
-        await gateway_client.send_message(validated_message.model_dump(by_alias=True))
-        logger.info(f"User {username} sent message: {validated_message.ID}")
-        return RedirectResponse(
-            url=f"/user/send?message=Message+sent+successfully!+ID:+{validated_message.ID}",
-            status_code=status.HTTP_303_SEE_OTHER
+        log_entry("info", "Requesting certificate wrapping from cert gateway...")
+        result = await gateway_client.send_message(
+            validated_message.model_dump(by_alias=True),
+            auto_send=should_auto_send
         )
+
+        if should_auto_send:
+            log_entry("success", f"Message sent successfully to gateway! ID: {validated_message.ID}")
+            logger.info(f"User {username} sent message: {validated_message.ID}")
+        else:
+            log_entry("success", f"Message cert-wrapped and saved (auto-send disabled). ID: {validated_message.ID}")
+            logger.info(f"User {username} cert-wrapped message (no send): {validated_message.ID}")
+
+        # Render the page with send log instead of redirect
+        projects = []
+        if whitelist:
+            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+
+        return templates.TemplateResponse("user/send_message.html", {
+            "request": request,
+            "title": "Send Message",
+            "username": username,
+            "projects": projects,
+            "default_id": str(uuid.uuid4()),
+            "default_timestamp": dt.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "message": f"Message {'sent' if should_auto_send else 'wrapped'} successfully! ID: {validated_message.ID}",
+            "error": "",
+            "send_log": send_log,
+            **get_branding()
+        })
+
+    except (CertGatewayUnavailableError, CertGatewayError) as e:
+        log_entry("error", f"Certificate gateway error: {e}")
+        logger.error(f"Cert gateway error: {e}")
+
+        projects = []
+        if whitelist:
+            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+
+        return templates.TemplateResponse("user/send_message.html", {
+            "request": request,
+            "title": "Send Message",
+            "username": username,
+            "projects": projects,
+            "default_id": message_id,
+            "default_timestamp": timestamp,
+            "message": "",
+            "error": "Certificate gateway unavailable. Message not sent.",
+            "send_log": send_log,
+            **get_branding()
+        })
+
     except GatewayUnavailableError as e:
+        log_entry("error", f"DMZ Gateway unavailable: {e}")
         logger.error(f"Gateway unavailable: {e}")
-        return RedirectResponse(
-            url=f"/user/send?error=Gateway+unavailable.+Please+try+again+later.",
-            status_code=status.HTTP_303_SEE_OTHER
-        )
+
+        projects = []
+        if whitelist:
+            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+
+        return templates.TemplateResponse("user/send_message.html", {
+            "request": request,
+            "title": "Send Message",
+            "username": username,
+            "projects": projects,
+            "default_id": message_id,
+            "default_timestamp": timestamp,
+            "message": "",
+            "error": "Gateway unavailable. Please try again later.",
+            "send_log": send_log,
+            **get_branding()
+        })
+
     except GatewayError as e:
+        log_entry("error", f"Gateway rejected the message: {e}")
         logger.error(f"Gateway error: {e}")
-        return RedirectResponse(
-            url=f"/user/send?error=Gateway+rejected+the+message.",
-            status_code=status.HTTP_303_SEE_OTHER
-        )
+
+        projects = []
+        if whitelist:
+            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+
+        return templates.TemplateResponse("user/send_message.html", {
+            "request": request,
+            "title": "Send Message",
+            "username": username,
+            "projects": projects,
+            "default_id": message_id,
+            "default_timestamp": timestamp,
+            "message": "",
+            "error": "Gateway rejected the message.",
+            "send_log": send_log,
+            **get_branding()
+        })
 
 
 @router.get("/history", response_class=HTMLResponse, name="user_history")

@@ -92,9 +92,20 @@ class GatewayClient:
         except Exception as e:
             logger.warning(f"User sync to gateway failed (non-fatal): username={username}, error={e}")
 
-    async def send_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
+    def set_cert_client(self, cert_client) -> None:
+        """Set the certificate client for JWT wrapping before send."""
+        self._cert_client = cert_client
+
+    async def send_message(
+        self, message_data: Dict[str, Any], auto_send: bool = True
+    ) -> Dict[str, Any]:
         """
         Send a message to the DMZ Gateway.
+
+        If a cert client is configured, the message is first sent to the
+        certificate gateway to be wrapped with a JWT. If auto_send is False,
+        the wrapped message is returned without forwarding to the gateway
+        (the caller is responsible for sending it later).
 
         Implements retry logic with exponential backoff for:
         - Connection errors
@@ -103,9 +114,11 @@ class GatewayClient:
 
         Args:
             message_data: The message to send
+            auto_send: If True (default), send immediately after cert wrapping.
+                       If False, return the cert-wrapped message without sending.
 
         Returns:
-            Response data from the gateway
+            Response data from the gateway (or wrapped message if auto_send=False)
 
         Raises:
             GatewayUnavailableError: If gateway is unavailable after retries
@@ -113,6 +126,27 @@ class GatewayClient:
         """
         request_id = get_request_id()
         message_id = message_data.get("ID", "unknown")
+
+        # Cert-wrap the message if cert client is available
+        payload = message_data
+        cert_client = getattr(self, "_cert_client", None)
+        if cert_client:
+            from .cert_client import CertGatewayError, CertGatewayUnavailableError
+            logger.info(f"Requesting cert wrap for message: message_id={message_id}")
+            wrapped = await cert_client.wrap_message(message_data)
+            payload = wrapped
+
+            if not auto_send:
+                logger.info(f"Auto-send disabled, returning wrapped message: message_id={message_id}")
+                return {"status": "pending", "message_id": message_id, "wrapped": wrapped}
+
+            # Wait for cert expiry if needed (cert must be valid when sent)
+            remaining = cert_client.seconds_until_expiry(wrapped)
+            if remaining > 0:
+                logger.info(
+                    f"Cert still valid for {remaining:.1f}s, sending immediately: "
+                    f"message_id={message_id}"
+                )
 
         client = await self._get_client()
         last_error: Optional[Exception] = None
@@ -126,7 +160,7 @@ class GatewayClient:
 
                 response = await client.post(
                     "/messages",
-                    json=message_data,
+                    json=payload,
                     headers={"X-Request-ID": request_id}
                 )
 

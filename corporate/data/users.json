@@ -11,9 +11,9 @@
       "created": "2026-03-26T15:08:25.582383",
       "enabled": true,
       "must_change_password": false,
-      "password_hash": "7233b639703ea5709db493175373ebb4:720dafae082124f273793f6e96f7c5b3099a1b8396d4010df83d584480dd010e",
+      "password_hash": "5b87cc896bd01d726ef89a9dd3c7b5b3:7efd790d852e1ed3ea214b52c6cd41343618a70d283b70d8d6e8121d8cc51870",
       "role": "user",
-      "updated": "2026-04-07T10:28:09.338583"
+      "updated": "2026-04-07T21:08:13.511255"
     }
   }
 }

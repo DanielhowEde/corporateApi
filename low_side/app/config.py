@@ -36,6 +36,9 @@ class Config:
         # Gateway URL
         "GATEWAY_URL": "http://localhost:8000",
 
+        # Error directory for storing application errors
+        "ERROR_DIR": "./data/errors",
+
         # Users file path (synced from corporate via gateway)
         "USERS_FILE_PATH": "./data/users.json",
     }
@@ -103,6 +106,11 @@ class Config:
     def users_file_path(self) -> Path:
         """Get the users file path."""
         return Path(self._config["USERS_FILE_PATH"])
+
+    @property
+    def error_dir(self) -> Path:
+        """Get the error directory for storing application errors."""
+        return Path(self._config["ERROR_DIR"])
 
     def reload(self) -> None:
         """Reload configuration from file and environment."""

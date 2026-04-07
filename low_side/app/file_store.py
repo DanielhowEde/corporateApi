@@ -33,7 +33,7 @@ class FileStore:
     3. Rename to final destination (atomic on POSIX)
     """
 
-    def __init__(self, master_dir: str = None, tmp_dir: str = None):
+    def __init__(self, master_dir: str = None, tmp_dir: str = None, error_dir: str = None):
         """
         Initialize file store.
 
@@ -43,6 +43,8 @@ class FileStore:
                         Defaults to MASTER_DIR from config or ./data/messages
             tmp_dir: Temporary directory for atomic writes.
                      Defaults to TMP_DIR from config or ./data/tmp
+            error_dir: Directory for storing error records.
+                       Defaults to ERROR_DIR from config or ./data/errors
         """
         # Import config here to avoid circular imports
         from .config import config
@@ -50,6 +52,7 @@ class FileStore:
         # Use provided values or fall back to config
         self.master_dir = Path(master_dir) if master_dir else config.master_dir
         self.tmp_dir = Path(tmp_dir) if tmp_dir else config.tmp_dir
+        self.error_dir = Path(error_dir) if error_dir else config.error_dir
 
         # Ensure base directories exist
         self._ensure_directories()
@@ -58,6 +61,7 @@ class FileStore:
         """Create base directories if they don't exist."""
         self.master_dir.mkdir(parents=True, exist_ok=True)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
+        self.error_dir.mkdir(parents=True, exist_ok=True)
 
     def _ensure_project_dir(self, project: str) -> Path:
         """
@@ -154,6 +158,40 @@ class FileStore:
                 except OSError:
                     pass
             raise FileStoreError(f"Unexpected error writing message file: {e}") from e
+
+    def write_error(self, error_data: Dict[str, Any]) -> Path:
+        """
+        Write an error record to the error directory.
+
+        Error files are stored as: {error_dir}/{error_id}.json
+
+        Args:
+            error_data: Dictionary containing error details.
+
+        Returns:
+            Path to the written error file
+
+        Raises:
+            FileStoreError: If the write operation fails
+        """
+        import uuid as _uuid
+        from datetime import datetime
+
+        error_id = error_data.get("error_id", str(_uuid.uuid4()))
+        if "timestamp" not in error_data:
+            error_data["timestamp"] = datetime.now().isoformat()
+        error_data["error_id"] = error_id
+
+        error_path = self.error_dir / f"{error_id}.json"
+
+        try:
+            with open(error_path, "w", encoding="utf-8") as f:
+                json.dump(error_data, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            return error_path
+        except OSError as e:
+            raise FileStoreError(f"Failed to write error file: {e}") from e
 
     def get_project_dir(self, project: str) -> Path:
         """

@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from .config import config
+from .cert_client import CertClient
 from .file_store import FileStore, FileStoreError
 from .gateway_client import GatewayClient, GatewayError, GatewayUnavailableError
 from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
@@ -39,13 +40,14 @@ logger = setup_logging("corporate_api")
 # Global instances (initialized in lifespan)
 file_store: FileStore
 gateway_client: GatewayClient
+cert_client: CertClient
 whitelist: ProjectWhitelist
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown."""
-    global file_store, gateway_client, whitelist
+    global file_store, gateway_client, cert_client, whitelist
 
     # Startup
     logger.info(f"Starting {config.full_name}")
@@ -53,7 +55,11 @@ async def lifespan(app: FastAPI):
     # Initialize components (they use config.py for paths)
     file_store = FileStore()
     gateway_client = GatewayClient()
+    cert_client = CertClient()
     whitelist = ProjectWhitelist()
+
+    # Wire cert client into gateway client for JWT wrapping before send
+    gateway_client.set_cert_client(cert_client)
 
     # Set dependencies for admin module
     admin.set_whitelist(whitelist)
@@ -71,6 +77,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info(f"Shutting down {config.full_name}")
+    await cert_client.close()
     await gateway_client.close()
     whitelist.close()
 
@@ -147,6 +154,19 @@ def check_project_whitelist(project_code: str) -> bool:
         True if the project is whitelisted and enabled
     """
     return whitelist.is_project_allowed(project_code)
+
+
+def _store_error(error_type: str, message: str, message_id: str = "", request_id: str = ""):
+    """Best-effort write of an error record to the error directory."""
+    try:
+        file_store.write_error({
+            "error_type": error_type,
+            "message": message,
+            "message_id": message_id,
+            "request_id": request_id,
+        })
+    except Exception as e:
+        logger.warning(f"Failed to write error record: {e}")
 
 
 # =============================================================================
@@ -268,6 +288,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
 
     except GatewayUnavailableError as e:
         logger.error(f"Gateway unavailable: message_id={message_id}, error={e}")
+        _store_error("gateway_unavailable", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=ErrorResponse(request_id=request_id).model_dump()
@@ -275,6 +296,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
 
     except GatewayError as e:
         logger.error(f"Gateway error: message_id={message_id}, error={e}")
+        _store_error("gateway_error", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content=ErrorResponse(request_id=request_id).model_dump()
@@ -360,6 +382,7 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
 
     except FileStoreError as e:
         logger.error(f"Failed to write message: message_id={message_id}, error={e}")
+        _store_error("file_write_error", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=ErrorResponse(request_id=request_id).model_dump()
