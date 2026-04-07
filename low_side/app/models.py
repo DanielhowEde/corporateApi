@@ -19,15 +19,19 @@ class Message(BaseModel):
     Use Message.model_validate(dict) to parse (not Message(**dict))
     Use .model_dump(by_alias=True) to serialize back to original JSON keys.
     """
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True, # Allows using the field name or alias
+        extra='forbid'         # Matches your current error behavior
+    )
 
     ID: str = Field(..., description="UUID identifier for the message")
     Project: str = Field(..., description="3-character project code (A-Z0-9)")
-    test_id: str = Field(..., alias="Test ID", description="Test identifier (3-10 chars)")
-    Timestamp: str = Field(..., description="ISO 8601 datetime (e.g. 2026-01-30T11:22:33)")
-    test_status: str = Field(..., alias="Test Status", description="Current test status")
+    # Validation will now map "TestID" in your JSON to test_id
+    test_id: str = Field(..., alias="TestID", description="Test identifier (3-10 chars)")
+    test_area: str = Field(..., alias="Area", description="Test Area (3-64 chars)")
+    Timestamp: str = Field(..., alias="Date", description="ISO 8601 datetime")
+    test_status: str = Field(..., alias="Status", description="Current test status")
     Data: Dict[str, str] = Field(..., description="String key-value pairs (max 20 entries)")
-
     @field_validator("ID")
     @classmethod
     def validate_uuid(cls, v: str) -> str:
