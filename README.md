@@ -419,4 +419,5 @@ Internal use only.
 7. Create .sh file to clear out any json over 1 day old from directories.
 8. Instruction for cron job to run at certain intervals.
 9. Need the ability to create keys
-10. 
+10. Instructions for setting up.
+
