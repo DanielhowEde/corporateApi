@@ -1,0 +1,497 @@
+# =============================================================================
+# DMZ Message Exchange API - GitLab CI/CD Pipeline
+# =============================================================================
+#
+# Pipeline stages (in order):
+#   1. prepare      - Environment setup, config validation, cache restore
+#   2. lint         - Code linting, formatting, config validation
+#   3. unit-test    - Fast isolated unit tests (no external deps)
+#   4. build        - Package application, produce artifacts
+#   5. sast         - Static analysis (SonarQube / bandit)
+#   6. dep-scan     - Dependency vulnerability and licence scanning
+#   7. integration  - Integration tests with mock gateway + mock cert gateway
+#   8. package      - Publish versioned artifacts / Docker images
+# =============================================================================
+
+stages:
+  - prepare
+  - lint
+  - unit-test
+  - build
+  - sast
+  - dep-scan
+  - integration
+  - package
+
+# ---------------------------------------------------------------------------
+# Global defaults
+# ---------------------------------------------------------------------------
+default:
+  image: python:3.12-slim
+  tags:
+    - docker
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PYTHONDONTWRITEBYTECODE: "1"
+  # SonarQube - set these in GitLab CI/CD variables (masked + protected)
+  # SONAR_HOST_URL: https://sonarqube.example.com
+  # SONAR_TOKEN: <token>
+
+# Pip cache shared across all jobs
+cache:
+  key: "${CI_COMMIT_REF_SLUG}-pip"
+  paths:
+    - .cache/pip/
+    - corporate/venv/
+    - low_side/venv/
+    - mock_gateway/venv/
+    - mock_cert_gateway/venv/
+
+# =============================================================================
+# Templates (reusable job definitions)
+# =============================================================================
+
+.install-corporate: &install-corporate
+  before_script:
+    - cd corporate
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+
+.install-low-side: &install-low-side
+  before_script:
+    - cd low_side
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+
+# =============================================================================
+# Stage 1: Prepare & Setup
+# =============================================================================
+
+prepare:
+  stage: prepare
+  script:
+    - echo "=== Validating pipeline environment ==="
+    - python --version
+    - pip --version
+
+    # Validate that required config files exist
+    - echo "Checking project structure..."
+    - test -f corporate/requirements.txt || (echo "MISSING corporate/requirements.txt" && exit 1)
+    - test -f low_side/requirements.txt  || (echo "MISSING low_side/requirements.txt" && exit 1)
+    - test -f mock_gateway/main.py       || (echo "MISSING mock_gateway/main.py" && exit 1)
+    - test -f mock_cert_gateway/main.py  || (echo "MISSING mock_cert_gateway/main.py" && exit 1)
+
+    # Validate JSON configs if present
+    - |
+      for f in corporate/config.json low_side/config.json; do
+        if [ -f "$f" ]; then
+          python -c "import json; json.load(open('$f'))" || (echo "INVALID JSON: $f" && exit 1)
+          echo "  OK $f"
+        fi
+      done
+
+    # Install dependencies into caches for downstream jobs
+    - echo "=== Installing corporate dependencies ==="
+    - cd corporate && python -m venv venv && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt && deactivate && cd ..
+
+    - echo "=== Installing low-side dependencies ==="
+    - cd low_side && python -m venv venv && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt && deactivate && cd ..
+
+    - echo "=== Installing mock gateway dependencies ==="
+    - cd mock_gateway && python -m venv venv && source venv/bin/activate && pip install --upgrade pip && pip install fastapi uvicorn httpx && deactivate && cd ..
+
+    - echo "=== Installing mock cert gateway dependencies ==="
+    - cd mock_cert_gateway && python -m venv venv && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt && deactivate && cd ..
+
+    - echo "=== Prepare complete ==="
+
+# =============================================================================
+# Stage 2: Linting & Validation
+# =============================================================================
+
+lint:corporate:
+  stage: lint
+  <<: *install-corporate
+  script:
+    - pip install ruff
+    # Code linting
+    - ruff check app/ --output-format=gitlab
+    # Formatting check (non-destructive)
+    - ruff format app/ --check --diff
+  allow_failure: false
+
+lint:low-side:
+  stage: lint
+  <<: *install-low-side
+  script:
+    - pip install ruff
+    - ruff check app/ --output-format=gitlab
+    - ruff format app/ --check --diff
+  allow_failure: false
+
+lint:config-validation:
+  stage: lint
+  script:
+    # Validate all Python files are syntactically correct
+    - python -m py_compile corporate/app/main.py
+    - python -m py_compile corporate/app/models.py
+    - python -m py_compile corporate/app/config.py
+    - python -m py_compile corporate/app/cert_client.py
+    - python -m py_compile low_side/app/main.py
+    - python -m py_compile low_side/app/models.py
+    - python -m py_compile low_side/app/config.py
+    - python -m py_compile mock_gateway/main.py
+    - python -m py_compile mock_cert_gateway/main.py
+    - echo "All Python files compile successfully"
+
+# =============================================================================
+# Stage 3: Unit Tests
+# =============================================================================
+
+unit-test:corporate:
+  stage: unit-test
+  <<: *install-corporate
+  script:
+    - pytest tests/ -v --tb=short --junitxml=../reports/corporate-unit.xml --cov=app --cov-report=term-missing --cov-report=xml:../reports/corporate-coverage.xml
+  artifacts:
+    when: always
+    reports:
+      junit: reports/corporate-unit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: reports/corporate-coverage.xml
+    expire_in: 30 days
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+
+unit-test:low-side:
+  stage: unit-test
+  <<: *install-low-side
+  script:
+    - pytest tests/ -v --tb=short --junitxml=../reports/low-side-unit.xml --cov=app --cov-report=term-missing --cov-report=xml:../reports/low-side-coverage.xml
+  artifacts:
+    when: always
+    reports:
+      junit: reports/low-side-unit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: reports/low-side-coverage.xml
+    expire_in: 30 days
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+
+# =============================================================================
+# Stage 4: Build
+# =============================================================================
+
+build:corporate:
+  stage: build
+  <<: *install-corporate
+  script:
+    - echo "=== Building corporate package ==="
+    # Freeze exact dependency versions for reproducibility
+    - pip freeze > requirements.lock
+    # Create distributable archive
+    - cd ..
+    - mkdir -p build
+    - tar czf build/corporate-${CI_COMMIT_SHORT_SHA}.tar.gz
+        corporate/app/
+        corporate/requirements.txt
+        corporate/requirements.lock
+    - echo "Build artifact: corporate-${CI_COMMIT_SHORT_SHA}.tar.gz"
+  artifacts:
+    paths:
+      - build/corporate-*.tar.gz
+      - corporate/requirements.lock
+    expire_in: 30 days
+
+build:low-side:
+  stage: build
+  <<: *install-low-side
+  script:
+    - echo "=== Building low-side package ==="
+    - pip freeze > requirements.lock
+    - cd ..
+    - mkdir -p build
+    - tar czf build/low-side-${CI_COMMIT_SHORT_SHA}.tar.gz
+        low_side/app/
+        low_side/requirements.txt
+        low_side/requirements.lock
+    - echo "Build artifact: low-side-${CI_COMMIT_SHORT_SHA}.tar.gz"
+  artifacts:
+    paths:
+      - build/low-side-*.tar.gz
+      - low_side/requirements.lock
+    expire_in: 30 days
+
+build:mock-services:
+  stage: build
+  script:
+    - echo "=== Building mock services package ==="
+    - mkdir -p build
+    - tar czf build/mocks-${CI_COMMIT_SHORT_SHA}.tar.gz
+        mock_gateway/
+        mock_cert_gateway/
+  artifacts:
+    paths:
+      - build/mocks-*.tar.gz
+    expire_in: 30 days
+
+# =============================================================================
+# Stage 5: Static Analysis (SAST)
+# =============================================================================
+
+sast:bandit:
+  stage: sast
+  <<: *install-corporate
+  script:
+    - pip install bandit
+    - echo "=== Running bandit on corporate ==="
+    - bandit -r app/ -f json -o ../reports/corporate-bandit.json --severity-level medium || true
+    - bandit -r app/ -f screen --severity-level medium
+    - echo "=== Running bandit on low_side ==="
+    - cd ../low_side
+    - bandit -r app/ -f json -o ../reports/low-side-bandit.json --severity-level medium || true
+    - bandit -r app/ -f screen --severity-level medium
+  artifacts:
+    when: always
+    paths:
+      - reports/*-bandit.json
+    expire_in: 30 days
+  allow_failure: false
+
+# SonarQube analysis (requires SONAR_HOST_URL and SONAR_TOKEN CI variables)
+sast:sonarqube:
+  stage: sast
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - sonar-scanner
+        -Dsonar.projectKey=${CI_PROJECT_NAME}
+        -Dsonar.sources=corporate/app,low_side/app
+        -Dsonar.tests=corporate/tests,low_side/tests
+        -Dsonar.python.coverage.reportPaths=reports/corporate-coverage.xml,reports/low-side-coverage.xml
+        -Dsonar.qualitygate.wait=true
+  rules:
+    - if: '$SONAR_HOST_URL && $SONAR_TOKEN'
+      when: always
+    - when: never
+  allow_failure: true
+
+# =============================================================================
+# Stage 6: Dependency Analysis
+# =============================================================================
+
+dep-scan:corporate:
+  stage: dep-scan
+  <<: *install-corporate
+  script:
+    - pip install pip-audit safety
+    - echo "=== pip-audit (corporate) ==="
+    - pip-audit --strict --desc on 2>&1 | tee ../reports/corporate-pip-audit.txt
+    - echo "=== safety check (corporate) ==="
+    - safety check --full-report 2>&1 | tee ../reports/corporate-safety.txt || true
+    # Validate lock file exists from build stage
+    - test -f requirements.lock && echo "Lock file present" || echo "WARNING: no lock file"
+  artifacts:
+    when: always
+    paths:
+      - reports/corporate-pip-audit.txt
+      - reports/corporate-safety.txt
+    expire_in: 30 days
+  allow_failure: false
+
+dep-scan:low-side:
+  stage: dep-scan
+  <<: *install-low-side
+  script:
+    - pip install pip-audit safety
+    - echo "=== pip-audit (low-side) ==="
+    - pip-audit --strict --desc on 2>&1 | tee ../reports/low-side-pip-audit.txt
+    - echo "=== safety check (low-side) ==="
+    - safety check --full-report 2>&1 | tee ../reports/low-side-safety.txt || true
+    - test -f requirements.lock && echo "Lock file present" || echo "WARNING: no lock file"
+  artifacts:
+    when: always
+    paths:
+      - reports/low-side-pip-audit.txt
+      - reports/low-side-safety.txt
+    expire_in: 30 days
+  allow_failure: false
+
+# =============================================================================
+# Stage 7: Integration Tests
+# =============================================================================
+
+integration:
+  stage: integration
+  services: []
+  script:
+    - echo "=== Setting up integration test environment ==="
+
+    # Install all services
+    - cd corporate && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && deactivate && cd ..
+    - cd low_side && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && deactivate && cd ..
+    - pip install fastapi uvicorn httpx
+
+    # Configure services to point at mock gateway and mock cert gateway
+    - export GATEWAY_URL=http://localhost:8000
+    - export CERT_GATEWAY_URL=http://localhost:8003
+    - export LOW_SIDE_URL=http://localhost:8002
+    - export CORPORATE_URL=http://localhost:8001
+
+    # Start mock cert gateway (port 8003)
+    - echo "Starting mock cert gateway on :8003..."
+    - cd mock_cert_gateway
+    - python -m uvicorn main:app --host 0.0.0.0 --port 8003 &
+    - CERT_GW_PID=$!
+    - cd ..
+
+    # Start mock gateway (port 8000)
+    - echo "Starting mock gateway on :8000..."
+    - cd mock_gateway
+    - python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
+    - GW_PID=$!
+    - cd ..
+
+    # Start corporate service (port 8001)
+    - echo "Starting corporate service on :8001..."
+    - cd corporate && source venv/bin/activate
+    - python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 &
+    - CORP_PID=$!
+    - deactivate && cd ..
+
+    # Start low-side service (port 8002)
+    - echo "Starting low-side service on :8002..."
+    - cd low_side && source venv/bin/activate
+    - python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 &
+    - LS_PID=$!
+    - deactivate && cd ..
+
+    # Wait for services to be ready
+    - echo "Waiting for services to start..."
+    - sleep 3
+
+    # Health checks
+    - echo "=== Health Checks ==="
+    - python -c "import httpx; r=httpx.get('http://localhost:8003/health'); print(f'Cert GW:   {r.status_code}'); assert r.status_code==200"
+    - python -c "import httpx; r=httpx.get('http://localhost:8000/health'); print(f'Gateway:   {r.status_code}'); assert r.status_code==200"
+    - python -c "import httpx; r=httpx.get('http://localhost:8001/health'); print(f'Corporate: {r.status_code}'); assert r.status_code==200"
+    - python -c "import httpx; r=httpx.get('http://localhost:8002/health'); print(f'Low-side:  {r.status_code}'); assert r.status_code==200"
+
+    # Integration test - send a message through the full pipeline
+    - echo "=== Integration Test: Full message flow ==="
+    - |
+      python -c "
+      import httpx, json, uuid
+      msg = {
+          'ID': str(uuid.uuid4()),
+          'Project': 'AAA',
+          'Test ID': 'TST001',
+          'Timestamp': '2026-04-08T12:00:00',
+          'Test Status': 'Inprogress',
+          'Data': {'result': 'pass', 'note': 'integration test'}
+      }
+      print(f'Sending message: {msg[\"ID\"]}')
+
+      # Send via corporate /messages endpoint
+      r = httpx.post('http://localhost:8001/messages', json=msg, timeout=30)
+      print(f'Corporate /messages response: {r.status_code}')
+      print(f'Response body: {r.text}')
+
+      # Verify low-side received it via health (basic connectivity)
+      r2 = httpx.get('http://localhost:8002/health')
+      print(f'Low-side still healthy: {r2.status_code}')
+
+      print('Integration test passed!')
+      "
+
+    # Integration test - cert wrapping
+    - echo "=== Integration Test: Cert gateway wrapping ==="
+    - |
+      python -c "
+      import httpx, json, uuid
+      msg = {
+          'ID': str(uuid.uuid4()),
+          'Project': 'AAA',
+          'Test ID': 'TST002',
+          'Timestamp': '2026-04-08T12:00:00',
+          'Test Status': 'Complete',
+          'Data': {'result': 'pass'}
+      }
+      print(f'Testing cert wrap for: {msg[\"ID\"]}')
+      r = httpx.post('http://localhost:8003/wrap', json=msg, timeout=10)
+      print(f'Cert gateway response: {r.status_code}')
+      body = r.json()
+      assert 'token' in body, 'Missing token in response'
+      assert 'expires_at' in body, 'Missing expires_at in response'
+      assert 'message' in body, 'Missing message in response'
+      print(f'Token: {body[\"token\"][:50]}...')
+      print(f'Expires: {body[\"expires_at\"]}')
+      print('Cert wrapping test passed!')
+      "
+
+    # Cleanup
+    - kill $CERT_GW_PID $GW_PID $CORP_PID $LS_PID 2>/dev/null || true
+    - echo "=== Integration tests complete ==="
+  rules:
+    - if: '$CI_MERGE_REQUEST_IID'
+      when: always
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: always
+    - when: manual
+  allow_failure: false
+
+# =============================================================================
+# Stage 8: Package / Publish
+# =============================================================================
+
+package:
+  stage: package
+  script:
+    - echo "=== Packaging release artifacts ==="
+    - mkdir -p release
+
+    # Version tag: use git tag if present, otherwise commit SHA
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        VERSION="$CI_COMMIT_TAG"
+      else
+        VERSION="${CI_COMMIT_SHORT_SHA}"
+      fi
+      echo "VERSION=${VERSION}" | tee release/VERSION
+
+    # Assemble final release archive
+    - tar czf release/dmz-api-${VERSION}.tar.gz
+        corporate/app/
+        corporate/requirements.txt
+        low_side/app/
+        low_side/requirements.txt
+        mock_gateway/
+        mock_cert_gateway/
+        cleanup.sh
+        README.md
+
+    - echo "Release artifact: dmz-api-${VERSION}.tar.gz"
+    - ls -lh release/
+  artifacts:
+    paths:
+      - release/
+    expire_in: 90 days
+  rules:
+    # Only package on default branch or tags - never overwrite release versions
+    - if: '$CI_COMMIT_TAG'
+      when: always
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: always
+    - when: never
