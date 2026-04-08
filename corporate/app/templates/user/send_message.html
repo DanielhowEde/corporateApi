@@ -39,7 +39,7 @@
 
         <div class="form-row">
             <div class="form-group">
-                <label for="test_id">Test ID</label>
+                <label for="test_id">TestID</label>
                 <input type="text"
                        id="test_id"
                        name="test_id"
@@ -52,7 +52,22 @@
             </div>
 
             <div class="form-group">
-                <label for="test_status">Test Status</label>
+                <label for="area">Area</label>
+                <input type="text"
+                       id="area"
+                       name="area"
+                       class="form-control"
+                       placeholder="Area Name"
+                       minlength="3"
+                       maxlength="64"
+                       required>
+                <p class="form-help">3-64 characters.</p>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="test_status">Status</label>
                 <input type="text"
                        id="test_status"
                        name="test_status"
@@ -61,17 +76,17 @@
                        value="Inprogress"
                        required>
             </div>
-        </div>
 
-        <div class="form-group">
-            <label for="timestamp">Timestamp</label>
-            <input type="text"
-                   id="timestamp"
-                   name="timestamp"
-                   class="form-control"
-                   value="{{ default_timestamp }}"
-                   required>
-            <p class="form-help">ISO 8601 format: YYYY-MM-DDTHH:MM:SS (e.g. 2026-01-30T11:22:33)</p>
+            <div class="form-group">
+                <label for="timestamp">Date</label>
+                <input type="text"
+                       id="timestamp"
+                       name="timestamp"
+                       class="form-control"
+                       value="{{ default_timestamp }}"
+                       required>
+                <p class="form-help">ISO 8601 format: YYYY-MM-DDTHH:MM:SS (e.g. 2026-01-30T11:22:33)</p>
+            </div>
         </div>
 
         <div class="form-group">
@@ -134,9 +149,10 @@
     <pre style="background: #f3f4f6; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.9rem;"><code>{
   "ID": "550e8400-e29b-41d4-a716-446655440000",  // UUID
   "Project": "AAA",                              // 3 chars, A-Z0-9
-  "Test ID": "ABC001",                           // 3-10 chars
-  "Timestamp": "2026-01-30T11:22:33",            // ISO 8601
-  "Test Status": "Inprogress",
+  "TestID": "ABC001",                            // 3-10 chars
+  "Area": "Area Name",                           // 3-64 chars
+  "Date": "2026-01-30T11:22:33",                 // ISO 8601
+  "Status": "Inprogress",
   "Data": {                                      // Max 20 string key-value pairs
     "result": "pass",
     "note": "all checks passed"

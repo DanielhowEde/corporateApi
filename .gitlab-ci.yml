@@ -54,6 +54,7 @@ cache:
 
 .install-corporate: &install-corporate
   before_script:
+    - mkdir -p reports
     - cd corporate
     - python -m venv venv
     - source venv/bin/activate
@@ -62,6 +63,7 @@ cache:
 
 .install-low-side: &install-low-side
   before_script:
+    - mkdir -p reports
     - cd low_side
     - python -m venv venv
     - source venv/bin/activate
@@ -85,15 +87,6 @@ prepare:
     - test -f low_side/requirements.txt  || (echo "MISSING low_side/requirements.txt" && exit 1)
     - test -f mock_gateway/main.py       || (echo "MISSING mock_gateway/main.py" && exit 1)
     - test -f mock_cert_gateway/main.py  || (echo "MISSING mock_cert_gateway/main.py" && exit 1)
-
-    # Validate JSON configs if present
-    - |
-      for f in corporate/config.json low_side/config.json; do
-        if [ -f "$f" ]; then
-          python -c "import json; json.load(open('$f'))" || (echo "INVALID JSON: $f" && exit 1)
-          echo "  OK $f"
-        fi
-      done
 
     # Install dependencies into caches for downstream jobs
     - echo "=== Installing corporate dependencies ==="
@@ -137,17 +130,39 @@ lint:low-side:
 lint:config-validation:
   stage: lint
   script:
-    # Validate all Python files are syntactically correct
-    - python -m py_compile corporate/app/main.py
-    - python -m py_compile corporate/app/models.py
-    - python -m py_compile corporate/app/config.py
-    - python -m py_compile corporate/app/cert_client.py
-    - python -m py_compile low_side/app/main.py
-    - python -m py_compile low_side/app/models.py
-    - python -m py_compile low_side/app/config.py
-    - python -m py_compile mock_gateway/main.py
-    - python -m py_compile mock_cert_gateway/main.py
-    - echo "All Python files compile successfully"
+    # Validate Python syntax (use ast.parse to avoid relative import errors with py_compile)
+    - |
+      python -c "
+      import ast, sys, pathlib
+      errors = []
+      for pattern in ['corporate/app/*.py', 'low_side/app/*.py', 'mock_gateway/*.py', 'mock_cert_gateway/*.py']:
+          for f in pathlib.Path('.').glob(pattern):
+              try:
+                  ast.parse(f.read_text(), filename=str(f))
+              except SyntaxError as e:
+                  errors.append(f'{f}: {e}')
+                  print(f'FAIL {f}: {e}')
+              else:
+                  print(f'  OK {f}')
+      if errors:
+          print(f'\n{len(errors)} file(s) have syntax errors')
+          sys.exit(1)
+      print('\nAll Python files parse successfully')
+      "
+    # Validate JSON config files if present
+    - |
+      python -c "
+      import json, sys, pathlib
+      for f in ['corporate/config.json', 'low_side/config.json']:
+          p = pathlib.Path(f)
+          if p.exists():
+              try:
+                  json.loads(p.read_text())
+                  print(f'  OK {f}')
+              except json.JSONDecodeError as e:
+                  print(f'FAIL {f}: {e}')
+                  sys.exit(1)
+      "
 
 # =============================================================================
 # Stage 3: Unit Tests
@@ -336,53 +351,65 @@ dep-scan:low-side:
 integration:
   stage: integration
   services: []
+  variables:
+    # All services read these via config.py (env vars override defaults)
+    GATEWAY_URL: "http://localhost:8000"
+    CERT_GATEWAY_URL: "http://localhost:8003"
+    # Mock gateway reads these directly
+    LOW_SIDE_URL: "http://localhost:8002"
+    CORPORATE_URL: "http://localhost:8001"
   script:
     - echo "=== Setting up integration test environment ==="
+    - mkdir -p reports
 
-    # Install all services
+    # Install all services into venvs
     - cd corporate && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && deactivate && cd ..
     - cd low_side && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && deactivate && cd ..
     - pip install fastapi uvicorn httpx
 
-    # Configure services to point at mock gateway and mock cert gateway
-    - export GATEWAY_URL=http://localhost:8000
-    - export CERT_GATEWAY_URL=http://localhost:8003
-    - export LOW_SIDE_URL=http://localhost:8002
-    - export CORPORATE_URL=http://localhost:8001
+    # Seed corporate whitelist so project AAA is allowed
+    - mkdir -p corporate/data
+    - echo '{"projects":{"AAA":{"enabled":true},"BBB":{"enabled":true}}}' > corporate/data/whitelist.json
+    - echo "Whitelist seeded"
 
     # Start mock cert gateway (port 8003)
     - echo "Starting mock cert gateway on :8003..."
-    - cd mock_cert_gateway
-    - python -m uvicorn main:app --host 0.0.0.0 --port 8003 &
+    - cd mock_cert_gateway && python -m uvicorn main:app --host 0.0.0.0 --port 8003 &
     - CERT_GW_PID=$!
     - cd ..
 
     # Start mock gateway (port 8000)
     - echo "Starting mock gateway on :8000..."
-    - cd mock_gateway
-    - python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
+    - cd mock_gateway && python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
     - GW_PID=$!
     - cd ..
 
-    # Start corporate service (port 8001)
+    # Start corporate service (port 8001) — run inside venv via explicit python path
     - echo "Starting corporate service on :8001..."
-    - cd corporate && source venv/bin/activate
-    - python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 &
+    - cd corporate && ./venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 &
     - CORP_PID=$!
-    - deactivate && cd ..
+    - cd ..
 
     # Start low-side service (port 8002)
     - echo "Starting low-side service on :8002..."
-    - cd low_side && source venv/bin/activate
-    - python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 &
+    - cd low_side && ./venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 &
     - LS_PID=$!
-    - deactivate && cd ..
+    - cd ..
 
-    # Wait for services to be ready
+    # Wait for services to be ready (poll with retries instead of fixed sleep)
     - echo "Waiting for services to start..."
-    - sleep 3
+    - |
+      for port in 8003 8000 8001 8002; do
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+          if python -c "import httpx; httpx.get('http://localhost:${port}/health', timeout=2)" 2>/dev/null; then
+            echo "  Port ${port} ready"
+            break
+          fi
+          sleep 1
+        done
+      done
 
-    # Health checks
+    # Health checks (will fail the job if any service is down)
     - echo "=== Health Checks ==="
     - python -c "import httpx; r=httpx.get('http://localhost:8003/health'); print(f'Cert GW:   {r.status_code}'); assert r.status_code==200"
     - python -c "import httpx; r=httpx.get('http://localhost:8000/health'); print(f'Gateway:   {r.status_code}'); assert r.status_code==200"
@@ -390,6 +417,7 @@ integration:
     - python -c "import httpx; r=httpx.get('http://localhost:8002/health'); print(f'Low-side:  {r.status_code}'); assert r.status_code==200"
 
     # Integration test - send a message through the full pipeline
+    # Uses aligned schema: TestID, Area, Date, Status
     - echo "=== Integration Test: Full message flow ==="
     - |
       python -c "
@@ -397,26 +425,32 @@ integration:
       msg = {
           'ID': str(uuid.uuid4()),
           'Project': 'AAA',
-          'Test ID': 'TST001',
-          'Timestamp': '2026-04-08T12:00:00',
-          'Test Status': 'Inprogress',
+          'TestID': 'TST001',
+          'Area': 'Integration',
+          'Date': '2026-04-08T12:00:00',
+          'Status': 'Inprogress',
           'Data': {'result': 'pass', 'note': 'integration test'}
       }
       print(f'Sending message: {msg[\"ID\"]}')
 
-      # Send via corporate /messages endpoint
+      # Send via corporate /messages endpoint (goes through cert wrap -> gateway)
       r = httpx.post('http://localhost:8001/messages', json=msg, timeout=30)
       print(f'Corporate /messages response: {r.status_code}')
       print(f'Response body: {r.text}')
+      assert r.status_code == 200, f'Expected 200, got {r.status_code}: {r.text}'
 
-      # Verify low-side received it via health (basic connectivity)
+      body = r.json()
+      assert body['success'] is True, f'Expected success=true, got: {body}'
+      assert body['message_id'] == msg['ID'], f'Message ID mismatch'
+
+      # Verify low-side is still healthy
       r2 = httpx.get('http://localhost:8002/health')
-      print(f'Low-side still healthy: {r2.status_code}')
+      assert r2.status_code == 200
 
-      print('Integration test passed!')
+      print('Full message flow test passed!')
       "
 
-    # Integration test - cert wrapping
+    # Integration test - cert wrapping directly
     - echo "=== Integration Test: Cert gateway wrapping ==="
     - |
       python -c "
@@ -424,9 +458,10 @@ integration:
       msg = {
           'ID': str(uuid.uuid4()),
           'Project': 'AAA',
-          'Test ID': 'TST002',
-          'Timestamp': '2026-04-08T12:00:00',
-          'Test Status': 'Complete',
+          'TestID': 'TST002',
+          'Area': 'Cert Test',
+          'Date': '2026-04-08T12:00:00',
+          'Status': 'Complete',
           'Data': {'result': 'pass'}
       }
       print(f'Testing cert wrap for: {msg[\"ID\"]}')
@@ -441,9 +476,34 @@ integration:
       print('Cert wrapping test passed!')
       "
 
-    # Cleanup
-    - kill $CERT_GW_PID $GW_PID $CORP_PID $LS_PID 2>/dev/null || true
+    # Integration test - low-side can receive messages directly
+    - echo "=== Integration Test: Low-side receive ==="
+    - |
+      python -c "
+      import httpx, uuid
+      msg = {
+          'ID': str(uuid.uuid4()),
+          'Project': 'AAA',
+          'TestID': 'TST003',
+          'Area': 'Low Side',
+          'Date': '2026-04-08T12:00:00',
+          'Status': 'Inprogress',
+          'Data': {'source': 'integration'}
+      }
+      print(f'Sending to low-side /dmz/messages: {msg[\"ID\"]}')
+      r = httpx.post('http://localhost:8002/dmz/messages', json=msg, timeout=10)
+      print(f'Low-side response: {r.status_code}')
+      assert r.status_code == 200, f'Expected 200, got {r.status_code}: {r.text}'
+      print('Low-side receive test passed!')
+      "
+
     - echo "=== Integration tests complete ==="
+  after_script:
+    # Always kill background services, even if tests fail
+    - pkill -f "uvicorn.*8003" 2>/dev/null || true
+    - pkill -f "uvicorn.*8000" 2>/dev/null || true
+    - pkill -f "uvicorn.*8001" 2>/dev/null || true
+    - pkill -f "uvicorn.*8002" 2>/dev/null || true
   rules:
     - if: '$CI_MERGE_REQUEST_IID'
       when: always

@@ -62,17 +62,19 @@ repo/
 
 ## Message Schema
 
+Both services use the same message schema:
+
 ```json
 {
   "ID": "550e8400-e29b-41d4-a716-446655440000",
   "Project": "AAA",
   "TestID": "AAA-1112",
   "Area": "Area Name",
+  "Date": "2026-01-30T11:22:33",
   "Status": "Inprogress",
-  "Date": "30012026T11:22:33",
   "Data": {
-    "random": "A",
-    "name": "john smith"
+    "result": "pass",
+    "note": "all checks passed"
   }
 }
 ```
@@ -83,8 +85,11 @@ repo/
 |-------|------|
 | ID | Valid UUID |
 | Project | Exactly 3 uppercase alphanumeric characters (`^[A-Z0-9]{3}$`) |
-| Date | Format: `ddMMyyyyThh:mm:ss` (e.g., `30012026T11:22:33`) |
-| Data | Must be an object (dict), allows arbitrary nested content |
+| TestID | 3-10 characters |
+| Area | 3-64 characters |
+| Date | ISO 8601 datetime (e.g. `2026-01-30T11:22:33`) |
+| Status | Free text |
+| Data | Object with string values only; max 20 entries; values 1-128 chars; allowed chars: `a-z A-Z 0-9 space ;` |
 | Top-level | No extra fields allowed (strict schema) |
 
 ## API Endpoints
@@ -582,11 +587,35 @@ cd mock_gateway && python -m uvicorn main:app    --port 8000 --reload &
 
 5. **Start services** via systemd, supervisor, or your preferred process manager.
 
-## Enhancement Backlog
+## Key Management (Admin)
 
-- Key generation and management UI (item 9)
-- Message history page with filtering and search
-- Pending message queue for manual send (when auto-send is off)
+The admin panel includes a **Keys** page (`/admin/keys`) for generating and managing RSA key pairs.
+
+- **Generate**: Create RSA 2048-bit or 4096-bit key pairs (requires `cryptography` package)
+- **View Public Key**: Copy the PEM public key to share with the cert gateway or partners
+- **Revoke**: Mark a key as revoked (does not delete files)
+- **Delete**: Permanently remove a key pair
+
+Keys are stored in `./data/keys/{key_id}/` with `private.pem`, `public.pem`, and `metadata.json`.
+
+## Message History (User Portal)
+
+The **History** page (`/user/history`) displays all received messages with:
+
+- **Project filter** dropdown
+- **Text search** across Message ID, Test ID, Test Status
+- Color-coded status badges (complete/fail/in-progress)
+- Data key summary column
+
+## Pending Message Queue (User Portal)
+
+When a message is sent with the **Auto-send** checkbox unchecked, it is cert-wrapped and saved to the **Pending** queue (`/user/pending`).
+
+- View all queued messages with cert expiry times
+- **Send Now** — release a pending message to the gateway
+- **Discard** — permanently remove from the queue
+
+Pending messages are stored in `./data/pending/{message_id}.json`.
 
 # CI/CD Lifecycle and creation 
 

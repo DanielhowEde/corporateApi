@@ -1,0 +1,94 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Generate New Key Pair</h2>
+    <form action="/admin/keys/generate" method="post" class="form-inline">
+        <div class="form-group">
+            <label for="key_name">Key Name</label>
+            <input type="text" id="key_name" name="key_name" class="form-control"
+                   placeholder="e.g. gateway-signing-key" required
+                   style="min-width: 250px;">
+        </div>
+        <div class="form-group">
+            <label for="key_size">Key Size</label>
+            <select id="key_size" name="key_size" class="form-control">
+                <option value="2048">RSA 2048-bit</option>
+                <option value="4096">RSA 4096-bit</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Generate Key</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Key Pairs ({{ keys | length }})</h2>
+
+    {% if keys %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Algorithm</th>
+                <th>Size</th>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in keys %}
+            <tr>
+                <td><strong>{{ key.name }}</strong></td>
+                <td>{{ key.algorithm }}</td>
+                <td>{{ key.key_size }}-bit</td>
+                <td>{{ key.created[:19] }}</td>
+                <td>
+                    {% if key.status == 'active' %}
+                    <span class="status-badge status-enabled">Active</span>
+                    {% elif key.status == 'revoked' %}
+                    <span class="status-badge status-disabled">Revoked</span>
+                    {% else %}
+                    <span class="status-badge">{{ key.status }}</span>
+                    {% endif %}
+                </td>
+                <td class="actions">
+                    <form action="/admin/keys/{{ key.key_id }}/public" method="get" style="display:inline;">
+                        <button type="submit" class="btn btn-secondary btn-sm">View Public Key</button>
+                    </form>
+                    {% if key.status == 'active' %}
+                    <form action="/admin/keys/{{ key.key_id }}/revoke" method="post" style="display:inline;"
+                          onsubmit="return confirm('Revoke this key? It cannot be un-revoked.')">
+                        <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+                    </form>
+                    {% endif %}
+                    <form action="/admin/keys/{{ key.key_id }}/delete" method="post" style="display:inline;"
+                          onsubmit="return confirm('Permanently delete this key pair? This cannot be undone.')">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No key pairs generated yet. Use the form above to create one.</p>
+    {% endif %}
+</div>
+
+{% if public_key_display %}
+<div class="card">
+    <h2>Public Key: {{ public_key_name }}</h2>
+    <pre style="background: #f7fafc; padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; white-space: pre-wrap; word-break: break-all;">{{ public_key_display }}</pre>
+    <p class="text-muted mt-2">Copy this public key and provide it to the certificate gateway or partner systems.</p>
+</div>
+{% endif %}
+{% endblock %}

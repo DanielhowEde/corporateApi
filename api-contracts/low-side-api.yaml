@@ -1,16 +1,22 @@
-openapi: "3.0.3"
+openapi: "3.1.0"
 info:
   title: LOW-SIDE DMZ API
   description: |
     Low-side API for secure message exchange via DMZ Gateway.
 
     ## Security
-    - All endpoints require mTLS authentication (enforced by reverse proxy)
-    - The `/dmz/messages` endpoint only accepts requests from the Gateway (enforced by proxy)
+    - All endpoints require mutual TLS (mTLS) authentication, enforced by the reverse proxy
+    - The `/dmz/messages` endpoint only accepts requests originating from the Gateway certificate
+    - Generic error messages on all failures to prevent information leakage
+    - Request tracking via `X-Request-ID` header on every response
 
-    ## Error Handling
-    All error responses use a generic message to avoid information leakage.
-    Detailed error information is logged server-side with the request_id.
+    ## User Sync
+    User accounts are managed by the corporate admin and synced to low-side via the
+    `/dmz/users` endpoint. The gateway forwards user create/update/delete events.
+
+    ## Error Storage
+    All application errors are persisted as JSON files in the configured error directory
+    for audit and debugging purposes.
   version: "1.0.0"
   contact:
     name: API Support
@@ -18,12 +24,14 @@ info:
 servers:
   - url: https://low-side-api.example.com
     description: Production server (mTLS required)
+  - url: http://localhost:8002
+    description: Local development
 
 paths:
   /health:
     get:
       summary: Health check
-      description: Returns the health status of the service
+      description: Returns the health status of the service. Not protected by mTLS.
       operationId: healthCheck
       tags:
         - Health
@@ -45,6 +53,8 @@ paths:
       operationId: sendMessage
       tags:
         - Messages
+      security:
+        - mTLS: []
       requestBody:
         required: true
         content:
@@ -56,8 +66,8 @@ paths:
               Project: "AAA"
               TestID: "AAA-1112"
               Area: "Area Name"
+              Date: "2026-01-30T11:22:33"
               Status: "Inprogress"
-              Date: "30012026T11:22:33"
               Data:
                 random: "A"
                 name: "john smith"
@@ -81,7 +91,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
-          description: Gateway unavailable
+          description: Gateway unavailable after retries
           content:
             application/json:
               schema:
@@ -99,6 +109,8 @@ paths:
       operationId: receiveMessage
       tags:
         - DMZ
+      security:
+        - mTLS: []
       requestBody:
         required: true
         content:
@@ -131,11 +143,71 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /dmz/users:
+    post:
+      summary: Receive user sync from Gateway
+      description: |
+        Receives user account create/update/delete events forwarded by the gateway
+        from corporate admin. Used to keep low-side user accounts in sync.
+
+        **Security:**
+        - Only accepts requests from Gateway certificates (enforced by proxy)
+      operationId: receiveUserSync
+      tags:
+        - DMZ
+      security:
+        - mTLS: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSyncRequest"
+            example:
+              username: "jsmith"
+              action: "upsert"
+              password_hash: "sha256:salt:hash"
+              enabled: true
+              must_change_password: true
+      responses:
+        "200":
+          description: User sync processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  message:
+                    type: string
+                    example: "User created"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Invalid JSON"
+
 components:
   schemas:
     Message:
       type: object
-      description: DMZ message with strict top-level schema
+      description: |
+        DMZ message with strict top-level schema. No extra fields allowed.
+
+        **NOTE:** The low-side uses different field names from corporate:
+        - `TestID` (not "Test ID")
+        - `Area` (not present on corporate)
+        - `Status` (not "Test Status")
+        - `Date` (not "Timestamp")
+
+        This is a known schema divergence — see README for alignment plans.
       required:
         - ID
         - Project
@@ -149,37 +221,74 @@ components:
         ID:
           type: string
           format: uuid
-          description: Unique message identifier (UUID)
+          description: Unique message identifier (UUID v4)
           example: "550e8400-e29b-41d4-a716-446655440000"
         Project:
           type: string
           pattern: "^[A-Z0-9]{3}$"
-          description: 3-character project code (uppercase alphanumeric)
+          description: 3-character project code (uppercase alphanumeric only)
           example: "AAA"
         TestID:
           type: string
-          description: Test identifier
+          minLength: 3
+          maxLength: 10
+          description: Test identifier (3-10 characters)
           example: "AAA-1112"
         Area:
           type: string
-          description: Area name
+          minLength: 3
+          maxLength: 64
+          description: Test area name (3-64 characters)
           example: "Area Name"
         Status:
           type: string
-          description: Current status
+          description: Current test status
           example: "Inprogress"
         Date:
           type: string
-          pattern: "^[0-3][0-9][0-1][0-9][0-9]{4}T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]$"
-          description: Date in ddMMyyyyThh:mm:ss format
-          example: "30012026T11:22:33"
+          format: date-time
+          description: ISO 8601 datetime (e.g. 2026-01-30T11:22:33)
+          example: "2026-01-30T11:22:33"
         Data:
           type: object
-          additionalProperties: true
-          description: Flexible data object with arbitrary key-value pairs
+          description: |
+            String key-value pairs. Constraints:
+            - Maximum 20 entries
+            - Values must be strings, 1-128 characters
+            - Allowed characters in values: `a-z A-Z 0-9 space ;`
+          maxProperties: 20
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: "^[a-zA-Z0-9 ;]+$"
           example:
             random: "A"
             name: "john smith"
+
+    UserSyncRequest:
+      type: object
+      description: User account sync event forwarded from corporate admin via gateway.
+      required:
+        - username
+        - action
+      properties:
+        username:
+          type: string
+          description: Username to sync
+        action:
+          type: string
+          enum: ["upsert", "delete"]
+          description: Whether to create/update or delete the user
+        password_hash:
+          type: string
+          description: SHA-256 salted password hash (for upsert)
+        enabled:
+          type: boolean
+          description: Whether the account is enabled (for upsert)
+        must_change_password:
+          type: boolean
+          description: Whether the user must change password on next login (for upsert)
 
     SuccessResponse:
       type: object
@@ -190,7 +299,7 @@ components:
       properties:
         success:
           type: boolean
-          enum: [true]
+          const: true
           description: Indicates successful operation
         request_id:
           type: string
@@ -210,7 +319,7 @@ components:
       properties:
         success:
           type: boolean
-          enum: [false]
+          const: false
           description: Indicates failed operation
         request_id:
           type: string
@@ -218,7 +327,7 @@ components:
           description: Unique request identifier for tracking
         error:
           type: string
-          description: Generic error message (no details exposed)
+          description: Generic error message (detailed cause is logged server-side only)
           example: "Invalid request"
 
     HealthResponse:
@@ -233,11 +342,13 @@ components:
 
   securitySchemes:
     mTLS:
-      type: http
-      scheme: bearer
+      type: mutualTLS
       description: |
-        Mutual TLS authentication enforced by reverse proxy.
-        Client must present a valid certificate trusted by the server.
+        Mutual TLS authentication enforced by the reverse proxy (Nginx/Envoy).
+        Clients must present a valid X.509 certificate trusted by the server's CA.
+        The proxy sets the following headers for downstream verification:
+        - `X-Client-Cert-DN` — client certificate distinguished name
+        - `X-Client-Cert-Fingerprint` — client certificate SHA-256 fingerprint
 
 security:
   - mTLS: []
@@ -246,6 +357,6 @@ tags:
   - name: Health
     description: Health check endpoints
   - name: Messages
-    description: Outbound message operations
+    description: Outbound message operations (low-side → gateway)
   - name: DMZ
-    description: Inbound message operations from Gateway
+    description: Inbound operations from gateway (messages and user sync)

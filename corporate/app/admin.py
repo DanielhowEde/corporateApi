@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .config import config
+from .key_manager import KeyManager, KeyManagerError
 from .whitelist import ProjectWhitelist, WhitelistError
 from .utils import setup_logging
 from . import auth
@@ -44,6 +45,9 @@ whitelist: Optional[ProjectWhitelist] = None
 
 # Gateway client (will be set by main.py)
 gateway_client = None
+
+# Key manager instance
+key_manager = KeyManager()
 
 
 def set_whitelist(wl: ProjectWhitelist) -> None:
@@ -548,6 +552,139 @@ async def admin_delete_admin(
 
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+# =============================================================================
+# Key Management
+# =============================================================================
+
+@router.get("/keys", response_class=HTMLResponse, name="admin_keys")
+async def admin_keys(
+    request: Request,
+    message: str = "",
+    error: str = "",
+    admin_session: Optional[str] = Cookie(None)
+):
+    """Key management page."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    keys = key_manager.list_keys()
+    return templates.TemplateResponse("admin/keys.html", {
+        "request": request,
+        "title": "Key Management",
+        "keys": keys,
+        "message": message,
+        "error": error,
+        **get_branding()
+    })
+
+
+@router.post("/keys/generate", name="admin_generate_key")
+async def admin_generate_key(
+    request: Request,
+    key_name: str = Form(...),
+    key_size: int = Form(2048),
+    admin_session: Optional[str] = Cookie(None)
+):
+    """Generate a new RSA key pair."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    name = key_name.strip()
+    if not name:
+        return RedirectResponse(
+            url="/admin/keys?error=Key+name+is+required",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    try:
+        metadata = key_manager.generate_key_pair(name, key_size)
+        logger.info(f"Admin generated key: {metadata['key_id']}, name={name}")
+        return RedirectResponse(
+            url=f"/admin/keys?message=Key+pair+generated+successfully:+{name}",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    except KeyManagerError as e:
+        logger.error(f"Key generation failed: {e}")
+        return RedirectResponse(
+            url=f"/admin/keys?error={str(e)[:80].replace(' ', '+')}",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+
+@router.get("/keys/{key_id}/public", response_class=HTMLResponse, name="admin_view_public_key")
+async def admin_view_public_key(
+    request: Request,
+    key_id: str,
+    admin_session: Optional[str] = Cookie(None)
+):
+    """View a public key."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    metadata = key_manager.get_key(key_id)
+    public_pem = key_manager.get_public_key_pem(key_id)
+
+    if not metadata or not public_pem:
+        return RedirectResponse(
+            url="/admin/keys?error=Key+not+found",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    keys = key_manager.list_keys()
+    return templates.TemplateResponse("admin/keys.html", {
+        "request": request,
+        "title": "Key Management",
+        "keys": keys,
+        "message": "",
+        "error": "",
+        "public_key_display": public_pem,
+        "public_key_name": metadata.get("name", key_id),
+        **get_branding()
+    })
+
+
+@router.post("/keys/{key_id}/revoke", name="admin_revoke_key")
+async def admin_revoke_key(
+    key_id: str,
+    admin_session: Optional[str] = Cookie(None)
+):
+    """Revoke a key pair."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    if key_manager.revoke_key(key_id):
+        logger.info(f"Admin revoked key: {key_id}")
+        return RedirectResponse(
+            url="/admin/keys?message=Key+revoked+successfully",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    return RedirectResponse(
+        url="/admin/keys?error=Key+not+found",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/keys/{key_id}/delete", name="admin_delete_key")
+async def admin_delete_key(
+    key_id: str,
+    admin_session: Optional[str] = Cookie(None)
+):
+    """Delete a key pair permanently."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    if key_manager.delete_key(key_id):
+        logger.info(f"Admin deleted key: {key_id}")
+        return RedirectResponse(
+            url="/admin/keys?message=Key+deleted+permanently",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    return RedirectResponse(
+        url="/admin/keys?error=Key+not+found",
         status_code=status.HTTP_303_SEE_OTHER
     )
 

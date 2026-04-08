@@ -47,6 +47,12 @@ class Config:
         # Error directory for storing application errors
         "ERROR_DIR": "./data/errors",
 
+        # Keys directory for generated key pairs
+        "KEYS_DIR": "./data/keys",
+
+        # Pending messages directory (auto-send disabled)
+        "PENDING_DIR": "./data/pending",
+
         # Whitelist file path
         "WHITELIST_FILE_PATH": "./data/whitelist.json",
 
@@ -138,6 +144,16 @@ class Config:
     def error_dir(self) -> Path:
         """Get the error directory for storing application errors."""
         return Path(self._config["ERROR_DIR"])
+
+    @property
+    def keys_dir(self) -> Path:
+        """Get the keys directory for generated key pairs."""
+        return Path(self._config["KEYS_DIR"])
+
+    @property
+    def pending_dir(self) -> Path:
+        """Get the pending messages directory."""
+        return Path(self._config["PENDING_DIR"])
 
     @property
     def admin_password(self) -> str:

@@ -195,6 +195,104 @@ class FileStore:
         except OSError as e:
             raise FileStoreError(f"Failed to write error file: {e}") from e
 
+    def write_pending(self, message_data: Dict[str, Any], wrapped_data: Dict[str, Any]) -> Path:
+        """
+        Save a cert-wrapped message to the pending directory for later sending.
+
+        Args:
+            message_data: The original validated message
+            wrapped_data: The cert-wrapped envelope from the cert gateway
+
+        Returns:
+            Path to the written pending file
+        """
+        from datetime import datetime
+        from .config import config
+
+        pending_dir = config.pending_dir
+        pending_dir.mkdir(parents=True, exist_ok=True)
+
+        message_id = message_data.get("ID", "unknown")
+        pending_record = {
+            "message": message_data,
+            "wrapped": wrapped_data,
+            "created": datetime.now().isoformat(),
+            "status": "pending",
+        }
+
+        pending_path = pending_dir / f"{message_id}.json"
+        try:
+            with open(pending_path, "w", encoding="utf-8") as f:
+                json.dump(pending_record, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            return pending_path
+        except OSError as e:
+            raise FileStoreError(f"Failed to write pending message: {e}") from e
+
+    def list_pending(self) -> List[Dict[str, Any]]:
+        """
+        List all pending messages.
+
+        Returns:
+            List of pending records, sorted newest first
+        """
+        from .config import config
+
+        pending_dir = config.pending_dir
+        if not pending_dir.exists():
+            return []
+
+        records = []
+        for f in pending_dir.iterdir():
+            if f.is_file() and f.suffix == ".json":
+                try:
+                    with open(f, "r", encoding="utf-8") as fh:
+                        record = json.load(fh)
+                    record["_path"] = str(f)
+                    records.append(record)
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+        records.sort(key=lambda r: r.get("created", ""), reverse=True)
+        return records
+
+    def get_pending(self, message_id: str) -> Dict[str, Any]:
+        """
+        Read a pending message by ID.
+
+        Raises:
+            FileStoreError: If not found
+        """
+        from .config import config
+
+        pending_path = config.pending_dir / f"{message_id}.json"
+        if not pending_path.exists():
+            raise FileStoreError(f"Pending message not found: {message_id}")
+        try:
+            with open(pending_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise FileStoreError(f"Failed to read pending message: {e}") from e
+
+    def remove_pending(self, message_id: str) -> bool:
+        """
+        Remove a pending message after it has been sent.
+
+        Returns:
+            True if removed, False if not found
+        """
+        from .config import config
+
+        pending_path = config.pending_dir / f"{message_id}.json"
+        if not pending_path.exists():
+            return False
+        try:
+            pending_path.unlink()
+            return True
+        except OSError:
+            return False
+
     def get_project_dir(self, project: str) -> Path:
         """
         Get the directory path for a specific project.
@@ -239,3 +337,83 @@ class FileStore:
             f.stem for f in project_dir.iterdir()
             if f.is_file() and f.suffix == ".json"
         ])
+
+    def read_message(self, message_id: str, project: str) -> Dict[str, Any]:
+        """
+        Read a message from disk.
+
+        Args:
+            message_id: UUID of the message
+            project: Project code
+
+        Returns:
+            Message data dict
+
+        Raises:
+            FileStoreError: If the read fails or file not found
+        """
+        file_path = self._get_final_path(message_id, project)
+        if not file_path.exists():
+            raise FileStoreError(f"Message not found: {message_id}")
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise FileStoreError(f"Failed to read message: {e}") from e
+
+    def get_all_messages(
+        self,
+        project_filter: str = "",
+        search_query: str = "",
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all messages across all projects, with optional filtering.
+
+        Args:
+            project_filter: If set, only return messages from this project
+            search_query: If set, filter messages whose ID, Test ID, or Test Status
+                          contain this string (case-insensitive)
+            limit: Maximum number of messages to return
+
+        Returns:
+            List of message dicts, sorted by Timestamp descending (newest first)
+        """
+        messages = []
+        projects = [project_filter] if project_filter else self.list_projects()
+
+        for proj in projects:
+            project_dir = self.master_dir / proj
+            if not project_dir.exists():
+                continue
+            for f in project_dir.iterdir():
+                if not (f.is_file() and f.suffix == ".json"):
+                    continue
+                try:
+                    with open(f, "r", encoding="utf-8") as fh:
+                        msg = json.load(fh)
+                    msg["_file_mtime"] = f.stat().st_mtime
+                    messages.append(msg)
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+        # Filter by search query
+        if search_query:
+            q = search_query.lower()
+            messages = [
+                m for m in messages
+                if q in m.get("ID", "").lower()
+                or q in m.get("TestID", "").lower()
+                or q in m.get("Area", "").lower()
+                or q in m.get("Status", "").lower()
+                or q in m.get("Project", "").lower()
+            ]
+
+        # Sort by file modification time descending (newest first)
+        messages.sort(key=lambda m: m.get("_file_mtime", 0), reverse=True)
+
+        # Clean up internal field
+        for m in messages:
+            m.pop("_file_mtime", None)
+
+        return messages[:limit]

@@ -48,7 +48,8 @@ class GatewayClient:
             base_url: Gateway base URL. If not provided, reads from GATEWAY_URL env var.
             timeout: Request timeout in seconds
         """
-        self.base_url = base_url or os.environ.get("GATEWAY_URL", "http://localhost:8080")
+        from .config import config
+        self.base_url = base_url or config.gateway_url
         self.timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
 

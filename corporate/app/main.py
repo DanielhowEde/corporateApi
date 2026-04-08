@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
     # Set dependencies for user module
     user.set_whitelist(whitelist)
     user.set_gateway_client(gateway_client)
+    user.set_file_store(file_store)
 
     logger.info(f"Message store: {file_store.master_dir}")
     logger.info(f"Gateway URL: {gateway_client.base_url}")

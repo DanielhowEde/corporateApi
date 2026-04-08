@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .config import config
+from .file_store import FileStore
 from .models import Message
 from .whitelist import ProjectWhitelist
 from .utils import setup_logging
@@ -49,6 +50,7 @@ router = APIRouter(prefix="/user", tags=["User Interface"])
 # Instances (will be set by main.py)
 whitelist: Optional[ProjectWhitelist] = None
 gateway_client = None
+file_store: Optional[FileStore] = None
 
 
 def set_whitelist(wl: ProjectWhitelist) -> None:
@@ -61,6 +63,12 @@ def set_gateway_client(client) -> None:
     """Set the gateway client instance for user routes."""
     global gateway_client
     gateway_client = client
+
+
+def set_file_store(fs: FileStore) -> None:
+    """Set the file store instance for user routes."""
+    global file_store
+    file_store = fs
 
 
 def get_current_user(session_token: Optional[str]) -> Optional[str]:
@@ -319,6 +327,7 @@ async def user_send_message_submit(
     message_id: str = Form(...),
     project: str = Form(...),
     test_id: str = Form(...),
+    area: str = Form(...),
     timestamp: str = Form(...),
     test_status: str = Form(...),
     data_json: str = Form("{}"),
@@ -367,13 +376,14 @@ async def user_send_message_submit(
             status_code=status.HTTP_303_SEE_OTHER
         )
 
-    # Build message using alias keys
+    # Build message using alias keys (matching low-side schema)
     message_data = {
         "ID": message_id.strip(),
         "Project": project.upper().strip(),
-        "Test ID": test_id.strip(),
-        "Timestamp": timestamp.strip(),
-        "Test Status": test_status.strip(),
+        "TestID": test_id.strip(),
+        "Area": area.strip(),
+        "Date": timestamp.strip(),
+        "Status": test_status.strip(),
         "Data": data_dict
     }
 
@@ -417,8 +427,15 @@ async def user_send_message_submit(
             log_entry("success", f"Message sent successfully to gateway! ID: {validated_message.ID}")
             logger.info(f"User {username} sent message: {validated_message.ID}")
         else:
-            log_entry("success", f"Message cert-wrapped and saved (auto-send disabled). ID: {validated_message.ID}")
-            logger.info(f"User {username} cert-wrapped message (no send): {validated_message.ID}")
+            # Save to pending queue
+            if file_store and "wrapped" in result:
+                file_store.write_pending(
+                    validated_message.model_dump(by_alias=True),
+                    result["wrapped"]
+                )
+                log_entry("info", "Message saved to pending queue")
+            log_entry("success", f"Message cert-wrapped and queued (auto-send disabled). ID: {validated_message.ID}")
+            logger.info(f"User {username} cert-wrapped message (queued): {validated_message.ID}")
 
         # Render the page with send log instead of redirect
         projects = []
@@ -503,25 +520,160 @@ async def user_send_message_submit(
 
 
 @router.get("/history", response_class=HTMLResponse, name="user_history")
-async def user_history(request: Request, session_token: Optional[str] = Cookie(None)):
-    """
-    Message history page (placeholder for future).
-    """
+async def user_history(
+    request: Request,
+    project: str = "",
+    search: str = "",
+    session_token: Optional[str] = Cookie(None)
+):
+    """Message history page with filtering and search."""
     redirect, username = require_auth(session_token)
     if redirect:
         return redirect
 
-    # Check if password change is required
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
             status_code=status.HTTP_303_SEE_OTHER
         )
 
+    messages = []
+    projects_list = []
+    if file_store:
+        messages = file_store.get_all_messages(
+            project_filter=project.upper().strip() if project else "",
+            search_query=search.strip() if search else "",
+            limit=200,
+        )
+        projects_list = file_store.list_projects()
+
+    # Also get enabled projects from whitelist for the filter dropdown
+    whitelist_projects = []
+    if whitelist:
+        whitelist_projects = [code for code, enabled in whitelist.list_projects()]
+
+    # Merge both lists (projects with messages + whitelisted)
+    all_projects = sorted(set(projects_list + whitelist_projects))
+
     return templates.TemplateResponse("user/history.html", {
         "request": request,
         "title": "Message History",
         "username": username,
-        "note": "Message history tracking is planned for a future release.",
+        "messages": messages,
+        "projects": all_projects,
+        "current_project": project,
+        "current_search": search,
+        "message_count": len(messages),
         **get_branding()
     })
+
+
+# =============================================================================
+# Pending Message Queue
+# =============================================================================
+
+@router.get("/pending", response_class=HTMLResponse, name="user_pending")
+async def user_pending(
+    request: Request,
+    message: str = "",
+    error: str = "",
+    session_token: Optional[str] = Cookie(None)
+):
+    """Pending messages queue — messages awaiting manual send."""
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    if auth.user_must_change_password(username):
+        return RedirectResponse(
+            url="/user/change-password?required=1",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    pending = []
+    if file_store:
+        pending = file_store.list_pending()
+
+    return templates.TemplateResponse("user/pending.html", {
+        "request": request,
+        "title": "Pending Queue",
+        "username": username,
+        "pending": pending,
+        "pending_count": len(pending),
+        "message": message,
+        "error": error,
+        **get_branding()
+    })
+
+
+@router.post("/pending/{message_id}/send", name="user_send_pending")
+async def user_send_pending(
+    request: Request,
+    message_id: str,
+    session_token: Optional[str] = Cookie(None)
+):
+    """Send a pending message from the queue."""
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    from .gateway_client import GatewayError, GatewayUnavailableError
+    from .file_store import FileStoreError
+
+    if not file_store or not gateway_client:
+        return RedirectResponse(
+            url="/user/pending?error=Service+not+configured",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    try:
+        record = file_store.get_pending(message_id)
+    except FileStoreError:
+        return RedirectResponse(
+            url="/user/pending?error=Pending+message+not+found",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    # Send the wrapped payload to the gateway
+    wrapped = record.get("wrapped", record.get("message", {}))
+    try:
+        await gateway_client.send_wrapped(wrapped)
+        file_store.remove_pending(message_id)
+        logger.info(f"User {username} sent pending message: {message_id}")
+        return RedirectResponse(
+            url=f"/user/pending?message=Message+sent+successfully!+ID:+{message_id}",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    except GatewayUnavailableError:
+        return RedirectResponse(
+            url="/user/pending?error=Gateway+unavailable.+Please+try+again+later.",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    except GatewayError:
+        return RedirectResponse(
+            url="/user/pending?error=Gateway+rejected+the+message.",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+
+@router.post("/pending/{message_id}/discard", name="user_discard_pending")
+async def user_discard_pending(
+    request: Request,
+    message_id: str,
+    session_token: Optional[str] = Cookie(None)
+):
+    """Discard a pending message from the queue."""
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    if file_store and file_store.remove_pending(message_id):
+        logger.info(f"User {username} discarded pending message: {message_id}")
+        return RedirectResponse(
+            url=f"/user/pending?message=Message+discarded:+{message_id}",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    return RedirectResponse(
+        url="/user/pending?error=Pending+message+not+found",
+        status_code=status.HTTP_303_SEE_OTHER
+    )

@@ -48,7 +48,8 @@ class GatewayClient:
             base_url: Gateway base URL. If not provided, reads from GATEWAY_URL env var.
             timeout: Request timeout in seconds
         """
-        self.base_url = base_url or os.environ.get("GATEWAY_URL", "http://localhost:8080")
+        from .config import config
+        self.base_url = base_url or config.gateway_url
         self.timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -215,6 +216,74 @@ class GatewayClient:
             f"Gateway unavailable after all retries: message_id={message_id}, "
             f"last_error={last_error}"
         )
+        raise GatewayUnavailableError(
+            f"Gateway unavailable after {self.MAX_RETRIES + 1} attempts"
+        )
+
+    async def send_wrapped(self, wrapped_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Send an already cert-wrapped message to the DMZ Gateway.
+
+        Used for releasing messages from the pending queue.
+
+        Args:
+            wrapped_payload: The cert-wrapped message envelope
+
+        Returns:
+            Response data from the gateway
+
+        Raises:
+            GatewayUnavailableError: If gateway is unavailable after retries
+            GatewayError: For other gateway communication errors
+        """
+        request_id = get_request_id()
+        message_id = wrapped_payload.get("message", {}).get("ID", "unknown")
+
+        client = await self._get_client()
+        last_error: Optional[Exception] = None
+
+        for attempt in range(self.MAX_RETRIES + 1):
+            try:
+                logger.info(
+                    f"Sending wrapped message to gateway: message_id={message_id}, "
+                    f"attempt={attempt + 1}/{self.MAX_RETRIES + 1}"
+                )
+
+                response = await client.post(
+                    "/messages",
+                    json=wrapped_payload,
+                    headers={"X-Request-ID": request_id}
+                )
+
+                if response.status_code >= 500:
+                    last_error = GatewayError(f"Gateway returned {response.status_code}")
+                    if attempt < self.MAX_RETRIES:
+                        backoff = self.INITIAL_BACKOFF * (2 ** attempt)
+                        await asyncio.sleep(backoff)
+                        continue
+                    else:
+                        raise GatewayUnavailableError(
+                            f"Gateway unavailable after {self.MAX_RETRIES + 1} attempts"
+                        )
+
+                if response.status_code >= 400:
+                    raise GatewayError(f"Gateway rejected message: {response.status_code}")
+
+                logger.info(f"Wrapped message sent successfully: message_id={message_id}")
+                return response.json()
+
+            except httpx.TimeoutException:
+                last_error = GatewayError("Timeout")
+                if attempt < self.MAX_RETRIES:
+                    await asyncio.sleep(self.INITIAL_BACKOFF * (2 ** attempt))
+                    continue
+
+            except httpx.ConnectError:
+                last_error = GatewayError("Connection error")
+                if attempt < self.MAX_RETRIES:
+                    await asyncio.sleep(self.INITIAL_BACKOFF * (2 ** attempt))
+                    continue
+
         raise GatewayUnavailableError(
             f"Gateway unavailable after {self.MAX_RETRIES + 1} attempts"
         )
