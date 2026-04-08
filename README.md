@@ -588,3 +588,120 @@ cd mock_gateway && python -m uvicorn main:app    --port 8000 --reload &
 - Message history page with filtering and search
 - Pending message queue for manual send (when auto-send is off)
 
+# CI/CD Lifecycle and creation 
+
+Mocks that need creating - mock to create the wrapper JWT cert
+Mock Gateway 
+Update Configuration to point at the Gateway
+
+## Pipeline stages
+
+1. Prepare & Setup
+2. Linting & Validation
+3. Unit Tests
+4. Build
+5. Static Analysis
+6. Dependency Analysis
+7. Integration Tests
+8. Package / Publish
+
+## Prepare & Setup
+### Purpose
+- Set up environment
+- validate pipeline inputs
+- Restore caches
+
+## Minimum requirements
+
+- validate configuration files
+- Load secrets securely
+- Configure caches
+
+## Linting & Validation 
+- Code linting
+- Formatting checks
+- Configuration validation
+
+## Unit Test
+### Purpose
+
+- run on every Commit
+- fast and isolated
+- No external dependencies
+
+## Build Stage 
+- Compile or package the application
+- Produce deterministic build artifacts
+
+### Requirements
+- Builds must be reproducible
+- Dependencies version must be pinned
+- Build artifacts must be stored as pipeline artifacts
+
+## Static Analysis Stage 
+### Purpose
+- Detect code smells, bugs and maintainability issues
+
+### Requirements
+- Must run on every merge request
+- Must block merge on critical issues
+- Results must be visible n Gitlab
+
+SonarQube (preferred Example)
+ - Use SonarQube or equivalent
+ - enforce quality gates
+
+## Dependency Analysis
+
+- Identify vulnerable or con- compliant dependencies
+- Support OSS governance and licence compliance
+
+### Python 
+ - pip-audit
+ - safety
+ - Lock file validation
+
+### Node.js
+- npm audit /yarn audit
+- Lock file enforcement
+
+### Requirements
+- High and Critical vulnerabilities must fail the pipeline
+- Accepted risks must be documented
+
+## Testing Stage
+### Integration Tests
+ - Validate component interation
+ - May use test containers or mocks
+ - Run at least on merge requests
+
+### System / End-to-End Tests
+ - Validate full system behaviour
+ - May run less frequently due to cost
+ - Required before production deployment
+
+### Code Coverage 
+ - Coverage must be reported
+ - Minimum thresholds should be defined per project
+ - Drops in coverage must be visible
+
+## Package / Publish stage
+
+- Publish build artifacts or Images
+
+### requirements
+- Version artifacts consistently
+- Never overwrite release versions
+
+## GitLab CI Best Practices
+- .gitlab-ci.yml is version controlled
+- Changes reviewed via merge requests
+
+### Resusable Pipelines
+ - use include and templates
+ - avoid copy-past across repositories
+ 
+### Secret Management
+- Never store secrets in git
+- Use GitLab CI variables or secret managers
+- Mask and protect sensitive varables
