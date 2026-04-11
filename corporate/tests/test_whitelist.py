@@ -1,4 +1,5 @@
 """Tests for project whitelist functionality."""
+
 import json
 import uuid
 
@@ -26,10 +27,7 @@ def valid_message():
         "Area": "Test Area",
         "Status": "Inprogress",
         "Date": "30012026T11:22:33",
-        "Data": {
-            "random": "A",
-            "name": "john smith"
-        }
+        "Data": {"random": "A", "name": "john smith"},
     }
 
 
@@ -120,6 +118,7 @@ class TestProjectWhitelist:
     def test_file_is_created(self, temp_file_path):
         """Test that the whitelist file is created automatically."""
         import os
+
         wl = ProjectWhitelist(file_path=temp_file_path)
         assert os.path.exists(temp_file_path)
         wl.close()
@@ -201,8 +200,7 @@ class TestWhitelistIntegration:
 
         # Mock gateway to avoid actual HTTP calls
         mocker.patch(
-            "app.main.gateway_client.send_message",
-            return_value={"success": True}
+            "app.main.gateway_client.send_message", return_value={"success": True}
         )
 
         response = client.post("/messages", json=valid_message)
@@ -211,9 +209,7 @@ class TestWhitelistIntegration:
         data = response.json()
         assert data["success"] is True
 
-    def test_send_message_project_disabled(
-        self, configured_client, valid_message
-    ):
+    def test_send_message_project_disabled(self, configured_client, valid_message):
         """Test that sending a message with disabled project returns 400."""
         client, whitelist = configured_client
         whitelist.add_project("AAA", enabled=False)

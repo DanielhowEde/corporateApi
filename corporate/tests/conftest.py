@@ -1,4 +1,5 @@
 """Pytest configuration and fixtures for CORPORATE API tests."""
+
 import os
 import tempfile
 
@@ -9,6 +10,7 @@ import pytest
 def reset_request_id():
     """Reset request ID context between tests."""
     from app.utils import request_id_var
+
     token = request_id_var.set("")
     yield
     request_id_var.reset(token)

@@ -4,6 +4,7 @@ Key generation and management for Corporate DMZ API.
 Generates RSA key pairs used for message signing and encryption.
 Keys are stored as PEM files in the configured keys directory.
 """
+
 import json
 import os
 import uuid
@@ -18,6 +19,7 @@ logger = setup_logging("key_manager")
 
 class KeyManagerError(Exception):
     """Exception raised when key management operations fail."""
+
     pass
 
 
@@ -36,7 +38,10 @@ class KeyManager:
 
     def __init__(self, keys_dir: str = None):
         from .config import config
-        self.keys_dir = Path(keys_dir) if keys_dir else config.master_dir.parent / "keys"
+
+        self.keys_dir = (
+            Path(keys_dir) if keys_dir else config.master_dir.parent / "keys"
+        )
         self.keys_dir.mkdir(parents=True, exist_ok=True)
 
     def generate_key_pair(
@@ -65,7 +70,9 @@ class KeyManager:
             )
 
         if key_size not in self.SUPPORTED_SIZES:
-            raise KeyManagerError(f"Unsupported key size: {key_size}. Use {self.SUPPORTED_SIZES}")
+            raise KeyManagerError(
+                f"Unsupported key size: {key_size}. Use {self.SUPPORTED_SIZES}"
+            )
 
         key_id = str(uuid.uuid4())
         key_dir = self.keys_dir / key_id
@@ -130,6 +137,7 @@ class KeyManager:
         except Exception as e:
             # Clean up on failure
             import shutil
+
             if key_dir.exists():
                 shutil.rmtree(key_dir, ignore_errors=True)
             raise KeyManagerError(f"Failed to generate key pair: {e}") from e
@@ -154,7 +162,9 @@ class KeyManager:
                             metadata = json.load(f)
                         keys.append(metadata)
                     except (json.JSONDecodeError, OSError) as e:
-                        logger.warning(f"Failed to read key metadata: {entry.name}, error={e}")
+                        logger.warning(
+                            f"Failed to read key metadata: {entry.name}, error={e}"
+                        )
 
         keys.sort(key=lambda k: k.get("created", ""), reverse=True)
         return keys
@@ -217,6 +227,7 @@ class KeyManager:
             True if key was found and deleted, False if not found
         """
         import shutil
+
         key_dir = self.keys_dir / key_id
         if not key_dir.exists():
             return False

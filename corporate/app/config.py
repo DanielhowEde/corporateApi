@@ -4,6 +4,7 @@ Configuration management for Corporate DMZ API.
 All configuration is loaded from environment variables with sensible defaults.
 A config file (config.json) can optionally be used to set defaults.
 """
+
 import json
 import os
 from pathlib import Path
@@ -30,38 +31,27 @@ class Config:
         "COMPANY_NAME": "Corporate",
         "SERVICE_NAME": "DMZ API",
         "NETWORK_LABEL": "CORPORATE NETWORK",
-
         # Master directory for message storage
         # Messages stored as: ${MASTER_DIR}/${Project}/{message_id}.json
         "MASTER_DIR": "./data/messages",
-
         # Temporary directory for atomic writes
         "TMP_DIR": "./data/tmp",
-
         # Gateway URL
         "GATEWAY_URL": "http://localhost:8000",
-
         # Certificate Gateway URL (wraps messages with JWT before sending)
         "CERT_GATEWAY_URL": "https://cert-gateway.example.com",
-
         # Error directory for storing application errors
         "ERROR_DIR": "./data/errors",
-
         # Keys directory for generated key pairs
         "KEYS_DIR": "./data/keys",
-
         # Pending messages directory (auto-send disabled)
         "PENDING_DIR": "./data/pending",
-
         # Whitelist file path
         "WHITELIST_FILE_PATH": "./data/whitelist.json",
-
         # Users file path
         "USERS_FILE_PATH": "./data/users.json",
-
         # Admin password (MUST be changed in production)
         "ADMIN_PASSWORD": "admin123",
-
         # Session secret (auto-generated if not set)
         "SESSION_SECRET": None,
     }

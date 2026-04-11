@@ -9,6 +9,7 @@ Security Assumptions:
 - The /dmz/messages endpoint should only accept requests from the Gateway
   (enforced by proxy configuration; placeholder middleware included for future cert checks)
 """
+
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -63,7 +64,7 @@ app = FastAPI(
     title="LOW-SIDE DMZ API",
     description="Low-side API for secure message exchange via DMZ Gateway",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Serve static files
@@ -78,6 +79,7 @@ app.include_router(user.router)
 # =============================================================================
 # Middleware
 # =============================================================================
+
 
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
@@ -119,15 +121,19 @@ async def verify_gateway_origin(request: Request) -> bool:
     return True
 
 
-def _store_error(error_type: str, message: str, message_id: str = "", request_id: str = ""):
+def _store_error(
+    error_type: str, message: str, message_id: str = "", request_id: str = ""
+):
     """Best-effort write of an error record to the error directory."""
     try:
-        file_store.write_error({
-            "error_type": error_type,
-            "message": message,
-            "message_id": message_id,
-            "request_id": request_id,
-        })
+        file_store.write_error(
+            {
+                "error_type": error_type,
+                "message": message,
+                "message_id": message_id,
+                "request_id": request_id,
+            }
+        )
     except Exception as e:
         logger.warning(f"Failed to write error record: {e}")
 
@@ -135,6 +141,7 @@ def _store_error(error_type: str, message: str, message_id: str = "", request_id
 # =============================================================================
 # Error Handlers
 # =============================================================================
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -145,9 +152,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
-            request_id=request_id,
-            error="Invalid request"
-        ).model_dump()
+            request_id=request_id, error="Invalid request"
+        ).model_dump(),
     )
 
 
@@ -160,15 +166,15 @@ async def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=ErrorResponse(
-            request_id=request_id,
-            error="Invalid request"
-        ).model_dump()
+            request_id=request_id, error="Invalid request"
+        ).model_dump(),
     )
 
 
 # =============================================================================
 # Endpoints
 # =============================================================================
+
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check() -> HealthResponse:
@@ -186,9 +192,9 @@ async def health_check() -> HealthResponse:
     response_model=SuccessResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid request"},
-        503: {"model": ErrorResponse, "description": "Service unavailable"}
+        503: {"model": ErrorResponse, "description": "Service unavailable"},
     },
-    tags=["Messages"]
+    tags=["Messages"],
 )
 async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResponse:
     """
@@ -216,10 +222,12 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
     try:
         validated_message = Message.model_validate(message)
     except ValidationError as e:
-        logger.warning(f"Schema validation failed: message={message}, errors={e.errors()}")
+        logger.warning(
+            f"Schema validation failed: message={message}, errors={e.errors()}"
+        )
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     message_id = validated_message.ID
@@ -230,17 +238,14 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
         await gateway_client.send_message(validated_message.model_dump(by_alias=True))
         logger.info(f"Message sent successfully: message_id={message_id}")
 
-        return SuccessResponse(
-            request_id=request_id,
-            message_id=message_id
-        )
+        return SuccessResponse(request_id=request_id, message_id=message_id)
 
     except GatewayUnavailableError as e:
         logger.error(f"Gateway unavailable: message_id={message_id}, error={e}")
         _store_error("gateway_unavailable", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     except GatewayError as e:
@@ -248,7 +253,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
         _store_error("gateway_error", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
 
@@ -257,9 +262,9 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
     response_model=SuccessResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid request"},
-        500: {"model": ErrorResponse, "description": "Internal server error"}
+        500: {"model": ErrorResponse, "description": "Internal server error"},
     },
-    tags=["DMZ"]
+    tags=["DMZ"],
 )
 async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessResponse:
     """
@@ -289,7 +294,7 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
         logger.warning("Request rejected: not from Gateway origin")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     # Validate message schema
@@ -299,7 +304,7 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
         logger.warning(f"Schema validation failed: errors={e.errors()}")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     message_id = validated_message.ID
@@ -307,20 +312,21 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
 
     # Write to disk atomically
     try:
-        file_path = file_store.write_message(validated_message.model_dump(by_alias=True))
-        logger.info(f"Message written to disk: message_id={message_id}, path={file_path}")
-
-        return SuccessResponse(
-            request_id=request_id,
-            message_id=message_id
+        file_path = file_store.write_message(
+            validated_message.model_dump(by_alias=True)
         )
+        logger.info(
+            f"Message written to disk: message_id={message_id}, path={file_path}"
+        )
+
+        return SuccessResponse(request_id=request_id, message_id=message_id)
 
     except FileStoreError as e:
         logger.error(f"Failed to write message: message_id={message_id}, error={e}")
         _store_error("file_write_error", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
 
@@ -339,17 +345,12 @@ async def receive_user_sync(request: Request):
         body = await request.json()
     except Exception:
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "Invalid JSON"}
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Invalid JSON"}
         )
 
     success, msg = low_auth.sync_user_from_corporate(body)
     if success:
         return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={"status": "ok", "message": msg}
+            status_code=status.HTTP_200_OK, content={"status": "ok", "message": msg}
         )
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"error": msg}
-    )
+    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": msg})

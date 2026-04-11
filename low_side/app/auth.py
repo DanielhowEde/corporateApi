@@ -6,6 +6,7 @@ The /dmz/users endpoint receives user data and stores it here.
 
 Supports: login, session management, password change.
 """
+
 import hashlib
 import json
 import os
@@ -80,6 +81,7 @@ def _save_users(users: Dict[str, dict]) -> bool:
 # User Sync (called from /dmz/users endpoint)
 # =============================================================================
 
+
 def sync_user_from_corporate(user_data: dict) -> tuple[bool, str]:
     """
     Apply a user sync event received from corporate via gateway.
@@ -122,6 +124,7 @@ def sync_user_from_corporate(user_data: dict) -> tuple[bool, str]:
 # =============================================================================
 # Authentication
 # =============================================================================
+
 
 def verify_user_credentials(username: str, password: str) -> bool:
     """Verify user credentials."""

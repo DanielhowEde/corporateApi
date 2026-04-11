@@ -1,6 +1,7 @@
 """
 Message models and validation for DMZ API.
 """
+
 import re
 import uuid
 from datetime import datetime
@@ -19,18 +20,23 @@ class Message(BaseModel):
     Use Message.model_validate(dict) to parse (not Message(**dict))
     Use .model_dump(by_alias=True) to serialize back to original JSON keys.
     """
+
     model_config = ConfigDict(
         populate_by_name=True,  # Allows using the field name or alias
-        extra='forbid'          # No extra fields allowed
+        extra="forbid",  # No extra fields allowed
     )
 
     ID: str = Field(..., description="UUID identifier for the message")
     Project: str = Field(..., description="3-character project code (A-Z0-9)")
-    test_id: str = Field(..., alias="TestID", description="Test identifier (3-10 chars)")
+    test_id: str = Field(
+        ..., alias="TestID", description="Test identifier (3-10 chars)"
+    )
     test_area: str = Field(..., alias="Area", description="Test area (3-64 chars)")
     Timestamp: str = Field(..., alias="Date", description="ISO 8601 datetime")
     test_status: str = Field(..., alias="Status", description="Current test status")
-    Data: Dict[str, str] = Field(..., description="String key-value pairs (max 20 entries)")
+    Data: Dict[str, str] = Field(
+        ..., description="String key-value pairs (max 20 entries)"
+    )
 
     @field_validator("ID")
     @classmethod
@@ -45,7 +51,9 @@ class Message(BaseModel):
     @classmethod
     def validate_project(cls, v: str) -> str:
         if not re.match(r"^[A-Z0-9]{3}$", v):
-            raise ValueError("Project must be exactly 3 uppercase alphanumeric characters")
+            raise ValueError(
+                "Project must be exactly 3 uppercase alphanumeric characters"
+            )
         return v
 
     @field_validator("test_id")
@@ -68,7 +76,9 @@ class Message(BaseModel):
         try:
             datetime.fromisoformat(v)
         except ValueError:
-            raise ValueError("Timestamp must be a valid ISO 8601 datetime (e.g. 2026-01-30T11:22:33)")
+            raise ValueError(
+                "Timestamp must be a valid ISO 8601 datetime (e.g. 2026-01-30T11:22:33)"
+            )
         return v
 
     @field_validator("Data")
@@ -93,6 +103,7 @@ class Message(BaseModel):
 
 class SuccessResponse(BaseModel):
     """Successful response model."""
+
     success: bool = True
     request_id: str
     message_id: str
@@ -100,6 +111,7 @@ class SuccessResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Generic error response model."""
+
     success: bool = False
     request_id: str
     error: str = "Invalid request"
@@ -107,4 +119,5 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response."""
+
     status: str = "ok"

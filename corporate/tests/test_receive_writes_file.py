@@ -1,4 +1,5 @@
 """Tests for file writing functionality on corporate side."""
+
 import json
 import uuid
 from pathlib import Path
@@ -19,10 +20,7 @@ def valid_message():
         "Area": "Test Area",
         "Status": "Inprogress",
         "Date": "30012026T11:22:33",
-        "Data": {
-            "random": "A",
-            "name": "john smith"
-        }
+        "Data": {"random": "A", "name": "john smith"},
     }
 
 
@@ -44,8 +42,12 @@ class TestFileStore:
 
         # Date is 30012026 -> 2026/01/30
         expected_path = (
-            temp_data_dir / "incoming" / "2026" / "01" / "30" /
-            f"{valid_message['ID']}.json"
+            temp_data_dir
+            / "incoming"
+            / "2026"
+            / "01"
+            / "30"
+            / f"{valid_message['ID']}.json"
         )
         assert result_path == expected_path
         assert result_path.exists()
@@ -98,8 +100,7 @@ class TestReceiveEndpointWithWhitelist:
 
         # Verify file was written
         expected_path = (
-            data_dir / "incoming" / "2026" / "01" / "30" /
-            f"{valid_message['ID']}.json"
+            data_dir / "incoming" / "2026" / "01" / "30" / f"{valid_message['ID']}.json"
         )
         assert expected_path.exists()
 
@@ -114,8 +115,7 @@ class TestReceiveEndpointWithWhitelist:
         client, data_dir = configured_client
 
         mocker.patch(
-            "app.main.file_store.write_message",
-            side_effect=FileStoreError("Disk full")
+            "app.main.file_store.write_message", side_effect=FileStoreError("Disk full")
         )
 
         response = client.post("/dmz/messages", json=valid_message)

@@ -1,4 +1,5 @@
 """Tests for message schema validation."""
+
 import uuid
 
 import pytest
@@ -24,10 +25,7 @@ def valid_message():
         "Area": "Test Area",
         "Status": "Inprogress",
         "Date": "30012026T11:22:33",
-        "Data": {
-            "random": "A",
-            "name": "john smith"
-        }
+        "Data": {"random": "A", "name": "john smith"},
     }
 
 
@@ -82,9 +80,9 @@ class TestMessageModel:
         invalid_dates = [
             "2026-01-30T11:22:33",  # ISO format
             "30-01-2026T11:22:33",  # Wrong separator
-            "30012026 11:22:33",    # Space instead of T
-            "3012026T11:22:33",     # Missing digit
-            "30012026T11:22",       # Missing seconds
+            "30012026 11:22:33",  # Space instead of T
+            "3012026T11:22:33",  # Missing digit
+            "30012026T11:22",  # Missing seconds
         ]
         for invalid_date in invalid_dates:
             valid_message["Date"] = invalid_date
@@ -113,7 +111,7 @@ class TestMessageModel:
             "key1": "value1",
             "key2": 123,
             "nested": {"a": "b"},
-            "list": [1, 2, 3]
+            "list": [1, 2, 3],
         }
         message = Message(**valid_message)
         assert message.Data["key1"] == "value1"
@@ -139,8 +137,7 @@ class TestSendMessageEndpoint:
         """Test that valid message schema is accepted."""
         # Mock the gateway client to avoid actual HTTP calls
         mocker.patch(
-            "app.main.gateway_client.send_message",
-            return_value={"success": True}
+            "app.main.gateway_client.send_message", return_value={"success": True}
         )
 
         response = client.post("/messages", json=valid_message)
@@ -203,13 +200,12 @@ class TestReceiveMessageEndpoint:
         """Test that valid message schema is accepted."""
         # Mock the file store
         mocker.patch.object(
-            client.app.state if hasattr(client.app, 'state') else type('', (), {})(),
-            'file_store',
-            create=True
+            client.app.state if hasattr(client.app, "state") else type("", (), {})(),
+            "file_store",
+            create=True,
         )
         mocker.patch(
-            "app.main.file_store.write_message",
-            return_value=tmp_path / "test.json"
+            "app.main.file_store.write_message", return_value=tmp_path / "test.json"
         )
 
         response = client.post("/dmz/messages", json=valid_message)

@@ -11,6 +11,7 @@ Authentication:
 - User accounts managed by admin via /admin/users
 - Password change required on first login
 """
+
 import json
 import uuid
 from datetime import datetime
@@ -44,6 +45,7 @@ def get_branding() -> dict:
         "full_name": config.full_name,
     }
 
+
 # Create router
 router = APIRouter(prefix="/user", tags=["User Interface"])
 
@@ -76,7 +78,9 @@ def get_current_user(session_token: Optional[str]) -> Optional[str]:
     return auth.verify_user_session(session_token)
 
 
-def require_auth(session_token: Optional[str]) -> tuple[Optional[RedirectResponse], Optional[str]]:
+def require_auth(
+    session_token: Optional[str],
+) -> tuple[Optional[RedirectResponse], Optional[str]]:
     """
     Check if user is authenticated.
     Returns (redirect_response, username).
@@ -88,9 +92,9 @@ def require_auth(session_token: Optional[str]) -> tuple[Optional[RedirectRespons
         return (
             RedirectResponse(
                 url="/user/login?error=Please+login+to+continue",
-                status_code=status.HTTP_303_SEE_OTHER
+                status_code=status.HTTP_303_SEE_OTHER,
             ),
-            None
+            None,
         )
     return (None, username)
 
@@ -99,23 +103,25 @@ def require_auth(session_token: Optional[str]) -> tuple[Optional[RedirectRespons
 # Authentication Routes
 # =============================================================================
 
+
 @router.get("/login", response_class=HTMLResponse, name="user_login")
 async def user_login_page(request: Request, error: str = "", message: str = ""):
     """Login page."""
-    return templates.TemplateResponse("user/login.html", {
-        "request": request,
-        "title": "Login",
-        "error": error,
-        "message": message,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "user/login.html",
+        {
+            "request": request,
+            "title": "Login",
+            "error": error,
+            "message": message,
+            **get_branding(),
+        },
+    )
 
 
 @router.post("/login", name="user_login_submit")
 async def user_login_submit(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...)
+    request: Request, username: str = Form(...), password: str = Form(...)
 ):
     """Handle login form submission."""
     username = username.strip()
@@ -128,12 +134,11 @@ async def user_login_submit(
         if auth.user_must_change_password(username):
             response = RedirectResponse(
                 url="/user/change-password?required=1",
-                status_code=status.HTTP_303_SEE_OTHER
+                status_code=status.HTTP_303_SEE_OTHER,
             )
         else:
             response = RedirectResponse(
-                url="/user/",
-                status_code=status.HTTP_303_SEE_OTHER
+                url="/user/", status_code=status.HTTP_303_SEE_OTHER
             )
 
         response.set_cookie(
@@ -141,14 +146,14 @@ async def user_login_submit(
             value=session_token,
             httponly=True,
             samesite="lax",
-            max_age=8 * 60 * 60  # 8 hours
+            max_age=8 * 60 * 60,  # 8 hours
         )
         return response
     else:
         logger.warning(f"Failed login attempt for user: {username}")
         return RedirectResponse(
             url="/user/login?error=Invalid+username+or+password",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
 
@@ -160,7 +165,7 @@ async def user_logout(session_token: Optional[str] = Cookie(None)):
         logger.info("User logged out")
     response = RedirectResponse(
         url="/user/login?message=You+have+been+logged+out",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
     response.delete_cookie("session_token")
     return response
@@ -170,13 +175,16 @@ async def user_logout(session_token: Optional[str] = Cookie(None)):
 # Password Change
 # =============================================================================
 
-@router.get("/change-password", response_class=HTMLResponse, name="user_change_password")
+
+@router.get(
+    "/change-password", response_class=HTMLResponse, name="user_change_password"
+)
 async def user_change_password_page(
     request: Request,
     required: str = "",
     error: str = "",
     message: str = "",
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Password change page."""
     redirect, username = require_auth(session_token)
@@ -185,15 +193,18 @@ async def user_change_password_page(
 
     is_required = required == "1" or auth.user_must_change_password(username)
 
-    return templates.TemplateResponse("user/change_password.html", {
-        "request": request,
-        "title": "Change Password",
-        "username": username,
-        "is_required": is_required,
-        "error": error,
-        "message": message,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "user/change_password.html",
+        {
+            "request": request,
+            "title": "Change Password",
+            "username": username,
+            "is_required": is_required,
+            "error": error,
+            "message": message,
+            **get_branding(),
+        },
+    )
 
 
 @router.post("/change-password", name="user_change_password_submit")
@@ -202,7 +213,7 @@ async def user_change_password_submit(
     current_password: str = Form(...),
     new_password: str = Form(...),
     confirm_password: str = Form(...),
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Handle password change form submission."""
     redirect, username = require_auth(session_token)
@@ -213,36 +224,38 @@ async def user_change_password_submit(
     if not auth.verify_user_credentials(username, current_password):
         return RedirectResponse(
             url="/user/change-password?error=Current+password+is+incorrect",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     # Verify new password matches confirmation
     if new_password != confirm_password:
         return RedirectResponse(
             url="/user/change-password?error=New+passwords+do+not+match",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     # Verify new password is different
     if current_password == new_password:
         return RedirectResponse(
             url="/user/change-password?error=New+password+must+be+different+from+current+password",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     # Update password
-    success, msg = auth.update_user_password(username, new_password, clear_must_change=True)
+    success, msg = auth.update_user_password(
+        username, new_password, clear_must_change=True
+    )
 
     if success:
         logger.info(f"User changed password: {username}")
         return RedirectResponse(
             url="/user/?message=Password+changed+successfully",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     return RedirectResponse(
         url=f"/user/change-password?error={msg.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -250,11 +263,10 @@ async def user_change_password_submit(
 # User Web Pages (Protected)
 # =============================================================================
 
+
 @router.get("/", response_class=HTMLResponse, name="user_home")
 async def user_home(
-    request: Request,
-    message: str = "",
-    session_token: Optional[str] = Cookie(None)
+    request: Request, message: str = "", session_token: Optional[str] = Cookie(None)
 ):
     """User home page."""
     redirect, username = require_auth(session_token)
@@ -265,16 +277,19 @@ async def user_home(
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    return templates.TemplateResponse("user/home.html", {
-        "request": request,
-        "title": "User Portal",
-        "username": username,
-        "message": message,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "user/home.html",
+        {
+            "request": request,
+            "title": "User Portal",
+            "username": username,
+            "message": message,
+            **get_branding(),
+        },
+    )
 
 
 @router.get("/send", response_class=HTMLResponse, name="user_send_message")
@@ -282,7 +297,7 @@ async def user_send_message_page(
     request: Request,
     message: str = "",
     error: str = "",
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """
     Message sending page - allows manual message composition and sending.
@@ -295,30 +310,35 @@ async def user_send_message_page(
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     # Get list of enabled projects for dropdown
     projects = []
     if whitelist:
-        projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+        projects = [
+            (code, enabled) for code, enabled in whitelist.list_projects() if enabled
+        ]
 
     # Generate default values
     default_id = str(uuid.uuid4())
     now = datetime.now()
     default_timestamp = now.strftime("%Y-%m-%dT%H:%M:%S")
 
-    return templates.TemplateResponse("user/send_message.html", {
-        "request": request,
-        "title": "Send Message",
-        "username": username,
-        "projects": projects,
-        "default_id": default_id,
-        "default_timestamp": default_timestamp,
-        "message": message,
-        "error": error,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "user/send_message.html",
+        {
+            "request": request,
+            "title": "Send Message",
+            "username": username,
+            "projects": projects,
+            "default_id": default_id,
+            "default_timestamp": default_timestamp,
+            "message": message,
+            "error": error,
+            **get_branding(),
+        },
+    )
 
 
 @router.post("/send", name="user_send_message_submit")
@@ -332,7 +352,7 @@ async def user_send_message_submit(
     test_status: str = Form(...),
     data_json: str = Form("{}"),
     auto_send: Optional[str] = Form(None),
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Handle message form submission with cert wrapping and auto-send support."""
     redirect, username = require_auth(session_token)
@@ -342,7 +362,7 @@ async def user_send_message_submit(
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     from .gateway_client import GatewayError, GatewayUnavailableError
@@ -353,11 +373,9 @@ async def user_send_message_submit(
     should_auto_send = auto_send == "on"
 
     def log_entry(level: str, message: str):
-        send_log.append({
-            "time": dt.now().strftime("%H:%M:%S"),
-            "level": level,
-            "message": message
-        })
+        send_log.append(
+            {"time": dt.now().strftime("%H:%M:%S"), "level": level, "message": message}
+        )
 
     # Parse the data JSON
     try:
@@ -368,12 +386,11 @@ async def user_send_message_submit(
         logger.warning(f"Invalid JSON in Data field: {e}")
         return RedirectResponse(
             url=f"/user/send?error=Invalid+JSON+in+Data+field:+{str(e)[:50]}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     except ValueError as e:
         return RedirectResponse(
-            url=f"/user/send?error={str(e)}",
-            status_code=status.HTTP_303_SEE_OTHER
+            url=f"/user/send?error={str(e)}", status_code=status.HTTP_303_SEE_OTHER
         )
 
     # Build message using alias keys (matching low-side schema)
@@ -384,7 +401,7 @@ async def user_send_message_submit(
         "Area": area.strip(),
         "Date": timestamp.strip(),
         "Status": test_status.strip(),
-        "Data": data_dict
+        "Data": data_dict,
     }
 
     # Validate message schema
@@ -396,7 +413,7 @@ async def user_send_message_submit(
         error_msg = str(e)[:100].replace(" ", "+")
         return RedirectResponse(
             url=f"/user/send?error=Validation+failed:+{error_msg}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     # Check whitelist
@@ -404,7 +421,7 @@ async def user_send_message_submit(
         logger.warning(f"Project not whitelisted: {validated_message.Project}")
         return RedirectResponse(
             url=f"/user/send?error=Project+{validated_message.Project}+is+not+authorized",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     log_entry("info", f"Project {validated_message.Project} authorized")
@@ -412,48 +429,61 @@ async def user_send_message_submit(
     if not gateway_client:
         return RedirectResponse(
             url=f"/user/send?error=Gateway+client+not+configured",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     # Send to gateway (cert wrapping + auto_send handled inside gateway_client)
     try:
         log_entry("info", "Requesting certificate wrapping from cert gateway...")
         result = await gateway_client.send_message(
-            validated_message.model_dump(by_alias=True),
-            auto_send=should_auto_send
+            validated_message.model_dump(by_alias=True), auto_send=should_auto_send
         )
 
         if should_auto_send:
-            log_entry("success", f"Message sent successfully to gateway! ID: {validated_message.ID}")
+            log_entry(
+                "success",
+                f"Message sent successfully to gateway! ID: {validated_message.ID}",
+            )
             logger.info(f"User {username} sent message: {validated_message.ID}")
         else:
             # Save to pending queue
             if file_store and "wrapped" in result:
                 file_store.write_pending(
-                    validated_message.model_dump(by_alias=True),
-                    result["wrapped"]
+                    validated_message.model_dump(by_alias=True), result["wrapped"]
                 )
                 log_entry("info", "Message saved to pending queue")
-            log_entry("success", f"Message cert-wrapped and queued (auto-send disabled). ID: {validated_message.ID}")
-            logger.info(f"User {username} cert-wrapped message (queued): {validated_message.ID}")
+            log_entry(
+                "success",
+                f"Message cert-wrapped and queued (auto-send disabled). ID: {validated_message.ID}",
+            )
+            logger.info(
+                f"User {username} cert-wrapped message (queued): {validated_message.ID}"
+            )
 
         # Render the page with send log instead of redirect
         projects = []
         if whitelist:
-            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+            projects = [
+                (code, enabled)
+                for code, enabled in whitelist.list_projects()
+                if enabled
+            ]
 
-        return templates.TemplateResponse("user/send_message.html", {
-            "request": request,
-            "title": "Send Message",
-            "username": username,
-            "projects": projects,
-            "default_id": str(uuid.uuid4()),
-            "default_timestamp": dt.now().strftime("%Y-%m-%dT%H:%M:%S"),
-            "message": f"Message {'sent' if should_auto_send else 'wrapped'} successfully! ID: {validated_message.ID}",
-            "error": "",
-            "send_log": send_log,
-            **get_branding()
-        })
+        return templates.TemplateResponse(
+            "user/send_message.html",
+            {
+                "request": request,
+                "title": "Send Message",
+                "username": username,
+                "projects": projects,
+                "default_id": str(uuid.uuid4()),
+                "default_timestamp": dt.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "message": f"Message {'sent' if should_auto_send else 'wrapped'} successfully! ID: {validated_message.ID}",
+                "error": "",
+                "send_log": send_log,
+                **get_branding(),
+            },
+        )
 
     except (CertGatewayUnavailableError, CertGatewayError) as e:
         log_entry("error", f"Certificate gateway error: {e}")
@@ -461,20 +491,27 @@ async def user_send_message_submit(
 
         projects = []
         if whitelist:
-            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+            projects = [
+                (code, enabled)
+                for code, enabled in whitelist.list_projects()
+                if enabled
+            ]
 
-        return templates.TemplateResponse("user/send_message.html", {
-            "request": request,
-            "title": "Send Message",
-            "username": username,
-            "projects": projects,
-            "default_id": message_id,
-            "default_timestamp": timestamp,
-            "message": "",
-            "error": "Certificate gateway unavailable. Message not sent.",
-            "send_log": send_log,
-            **get_branding()
-        })
+        return templates.TemplateResponse(
+            "user/send_message.html",
+            {
+                "request": request,
+                "title": "Send Message",
+                "username": username,
+                "projects": projects,
+                "default_id": message_id,
+                "default_timestamp": timestamp,
+                "message": "",
+                "error": "Certificate gateway unavailable. Message not sent.",
+                "send_log": send_log,
+                **get_branding(),
+            },
+        )
 
     except GatewayUnavailableError as e:
         log_entry("error", f"DMZ Gateway unavailable: {e}")
@@ -482,20 +519,27 @@ async def user_send_message_submit(
 
         projects = []
         if whitelist:
-            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+            projects = [
+                (code, enabled)
+                for code, enabled in whitelist.list_projects()
+                if enabled
+            ]
 
-        return templates.TemplateResponse("user/send_message.html", {
-            "request": request,
-            "title": "Send Message",
-            "username": username,
-            "projects": projects,
-            "default_id": message_id,
-            "default_timestamp": timestamp,
-            "message": "",
-            "error": "Gateway unavailable. Please try again later.",
-            "send_log": send_log,
-            **get_branding()
-        })
+        return templates.TemplateResponse(
+            "user/send_message.html",
+            {
+                "request": request,
+                "title": "Send Message",
+                "username": username,
+                "projects": projects,
+                "default_id": message_id,
+                "default_timestamp": timestamp,
+                "message": "",
+                "error": "Gateway unavailable. Please try again later.",
+                "send_log": send_log,
+                **get_branding(),
+            },
+        )
 
     except GatewayError as e:
         log_entry("error", f"Gateway rejected the message: {e}")
@@ -503,20 +547,27 @@ async def user_send_message_submit(
 
         projects = []
         if whitelist:
-            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
+            projects = [
+                (code, enabled)
+                for code, enabled in whitelist.list_projects()
+                if enabled
+            ]
 
-        return templates.TemplateResponse("user/send_message.html", {
-            "request": request,
-            "title": "Send Message",
-            "username": username,
-            "projects": projects,
-            "default_id": message_id,
-            "default_timestamp": timestamp,
-            "message": "",
-            "error": "Gateway rejected the message.",
-            "send_log": send_log,
-            **get_branding()
-        })
+        return templates.TemplateResponse(
+            "user/send_message.html",
+            {
+                "request": request,
+                "title": "Send Message",
+                "username": username,
+                "projects": projects,
+                "default_id": message_id,
+                "default_timestamp": timestamp,
+                "message": "",
+                "error": "Gateway rejected the message.",
+                "send_log": send_log,
+                **get_branding(),
+            },
+        )
 
 
 @router.get("/history", response_class=HTMLResponse, name="user_history")
@@ -524,7 +575,7 @@ async def user_history(
     request: Request,
     project: str = "",
     search: str = "",
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Message history page with filtering and search."""
     redirect, username = require_auth(session_token)
@@ -534,7 +585,7 @@ async def user_history(
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     messages = []
@@ -555,29 +606,33 @@ async def user_history(
     # Merge both lists (projects with messages + whitelisted)
     all_projects = sorted(set(projects_list + whitelist_projects))
 
-    return templates.TemplateResponse("user/history.html", {
-        "request": request,
-        "title": "Message History",
-        "username": username,
-        "messages": messages,
-        "projects": all_projects,
-        "current_project": project,
-        "current_search": search,
-        "message_count": len(messages),
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "user/history.html",
+        {
+            "request": request,
+            "title": "Message History",
+            "username": username,
+            "messages": messages,
+            "projects": all_projects,
+            "current_project": project,
+            "current_search": search,
+            "message_count": len(messages),
+            **get_branding(),
+        },
+    )
 
 
 # =============================================================================
 # Pending Message Queue
 # =============================================================================
 
+
 @router.get("/pending", response_class=HTMLResponse, name="user_pending")
 async def user_pending(
     request: Request,
     message: str = "",
     error: str = "",
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Pending messages queue — messages awaiting manual send."""
     redirect, username = require_auth(session_token)
@@ -587,30 +642,33 @@ async def user_pending(
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     pending = []
     if file_store:
         pending = file_store.list_pending()
 
-    return templates.TemplateResponse("user/pending.html", {
-        "request": request,
-        "title": "Pending Queue",
-        "username": username,
-        "pending": pending,
-        "pending_count": len(pending),
-        "message": message,
-        "error": error,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "user/pending.html",
+        {
+            "request": request,
+            "title": "Pending Queue",
+            "username": username,
+            "pending": pending,
+            "pending_count": len(pending),
+            "message": message,
+            "error": error,
+            **get_branding(),
+        },
+    )
 
 
 @router.post("/pending/bulk-send", name="user_bulk_send_pending")
 async def user_bulk_send_pending(
     request: Request,
     message_ids: list[str] = Form(default=[]),
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Send multiple selected pending messages."""
     redirect, username = require_auth(session_token)
@@ -623,13 +681,13 @@ async def user_bulk_send_pending(
     if not file_store or not gateway_client:
         return RedirectResponse(
             url="/user/pending?error=Service+not+configured",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     if not message_ids:
         return RedirectResponse(
             url="/user/pending?error=No+messages+selected",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     sent = 0
@@ -651,11 +709,11 @@ async def user_bulk_send_pending(
     if failed == 0:
         return RedirectResponse(
             url=f"/user/pending?message={sent}+message(s)+sent+successfully",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
         url=f"/user/pending?error={sent}+sent,+{failed}+failed.+Check+gateway+availability.",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -663,7 +721,7 @@ async def user_bulk_send_pending(
 async def user_bulk_discard_pending(
     request: Request,
     message_ids: list[str] = Form(default=[]),
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Discard multiple selected pending messages."""
     redirect, username = require_auth(session_token)
@@ -673,7 +731,7 @@ async def user_bulk_discard_pending(
     if not message_ids:
         return RedirectResponse(
             url="/user/pending?error=No+messages+selected",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     discarded = 0
@@ -684,15 +742,13 @@ async def user_bulk_discard_pending(
 
     return RedirectResponse(
         url=f"/user/pending?message={discarded}+message(s)+discarded",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
 @router.post("/pending/{message_id}/send", name="user_send_pending")
 async def user_send_pending(
-    request: Request,
-    message_id: str,
-    session_token: Optional[str] = Cookie(None)
+    request: Request, message_id: str, session_token: Optional[str] = Cookie(None)
 ):
     """Send a pending message from the queue."""
     redirect, username = require_auth(session_token)
@@ -705,7 +761,7 @@ async def user_send_pending(
     if not file_store or not gateway_client:
         return RedirectResponse(
             url="/user/pending?error=Service+not+configured",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     try:
@@ -713,7 +769,7 @@ async def user_send_pending(
     except FileStoreError:
         return RedirectResponse(
             url="/user/pending?error=Pending+message+not+found",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     wrapped = record.get("wrapped", record.get("message", {}))
@@ -723,25 +779,23 @@ async def user_send_pending(
         logger.info(f"User {username} sent pending message: {message_id}")
         return RedirectResponse(
             url=f"/user/pending?message=Message+sent+successfully!+ID:+{message_id}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     except GatewayUnavailableError:
         return RedirectResponse(
             url="/user/pending?error=Gateway+unavailable.+Please+try+again+later.",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     except GatewayError:
         return RedirectResponse(
             url="/user/pending?error=Gateway+rejected+the+message.",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
 
 @router.post("/pending/{message_id}/discard", name="user_discard_pending")
 async def user_discard_pending(
-    request: Request,
-    message_id: str,
-    session_token: Optional[str] = Cookie(None)
+    request: Request, message_id: str, session_token: Optional[str] = Cookie(None)
 ):
     """Discard a pending message from the queue."""
     redirect, username = require_auth(session_token)
@@ -752,9 +806,9 @@ async def user_discard_pending(
         logger.info(f"User {username} discarded pending message: {message_id}")
         return RedirectResponse(
             url=f"/user/pending?message=Message+discarded:+{message_id}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
         url="/user/pending?error=Pending+message+not+found",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )

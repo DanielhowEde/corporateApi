@@ -5,6 +5,7 @@ File structure: ${MASTER_DIR}/${Project}/{message_id}.json
 
 This keeps messages organized by project for easy management and retrieval.
 """
+
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ from typing import Any, Dict, List
 
 class FileStoreError(Exception):
     """Exception raised when file storage operations fail."""
+
     pass
 
 
@@ -33,7 +35,9 @@ class FileStore:
     3. Rename to final destination (atomic on POSIX)
     """
 
-    def __init__(self, master_dir: str = None, tmp_dir: str = None, error_dir: str = None):
+    def __init__(
+        self, master_dir: str = None, tmp_dir: str = None, error_dir: str = None
+    ):
         """
         Initialize file store.
 
@@ -215,10 +219,13 @@ class FileStore:
         """
         if not self.master_dir.exists():
             return []
-        return sorted([
-            d.name for d in self.master_dir.iterdir()
-            if d.is_dir() and len(d.name) == 3  # Project codes are 3 chars
-        ])
+        return sorted(
+            [
+                d.name
+                for d in self.master_dir.iterdir()
+                if d.is_dir() and len(d.name) == 3  # Project codes are 3 chars
+            ]
+        )
 
     def list_messages(self, project: str) -> List[str]:
         """
@@ -233,7 +240,10 @@ class FileStore:
         project_dir = self.master_dir / project
         if not project_dir.exists():
             return []
-        return sorted([
-            f.stem for f in project_dir.iterdir()
-            if f.is_file() and f.suffix == ".json"
-        ])
+        return sorted(
+            [
+                f.stem
+                for f in project_dir.iterdir()
+                if f.is_file() and f.suffix == ".json"
+            ]
+        )

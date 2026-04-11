@@ -14,6 +14,7 @@ Corporate-Specific Features:
 - Admin web interface for managing projects and viewing certificates
 - Projects must be present and enabled to send/receive messages
 """
+
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -87,11 +88,15 @@ app = FastAPI(
     title=f"{config.full_name}",
     description=f"{config.company_name} API for secure message exchange via DMZ Gateway",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Serve static files (images, etc.)
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).parent / "static")),
+    name="static",
+)
 
 # Include admin routes
 app.include_router(admin.router)
@@ -103,6 +108,7 @@ app.include_router(user.router)
 # =============================================================================
 # Middleware
 # =============================================================================
+
 
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
@@ -157,15 +163,19 @@ def check_project_whitelist(project_code: str) -> bool:
     return whitelist.is_project_allowed(project_code)
 
 
-def _store_error(error_type: str, message: str, message_id: str = "", request_id: str = ""):
+def _store_error(
+    error_type: str, message: str, message_id: str = "", request_id: str = ""
+):
     """Best-effort write of an error record to the error directory."""
     try:
-        file_store.write_error({
-            "error_type": error_type,
-            "message": message,
-            "message_id": message_id,
-            "request_id": request_id,
-        })
+        file_store.write_error(
+            {
+                "error_type": error_type,
+                "message": message,
+                "message_id": message_id,
+                "request_id": request_id,
+            }
+        )
     except Exception as e:
         logger.warning(f"Failed to write error record: {e}")
 
@@ -173,6 +183,7 @@ def _store_error(error_type: str, message: str, message_id: str = "", request_id
 # =============================================================================
 # Error Handlers
 # =============================================================================
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -183,9 +194,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
-            request_id=request_id,
-            error="Invalid request"
-        ).model_dump()
+            request_id=request_id, error="Invalid request"
+        ).model_dump(),
     )
 
 
@@ -198,15 +208,15 @@ async def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=ErrorResponse(
-            request_id=request_id,
-            error="Invalid request"
-        ).model_dump()
+            request_id=request_id, error="Invalid request"
+        ).model_dump(),
     )
 
 
 # =============================================================================
 # Endpoints
 # =============================================================================
+
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check() -> HealthResponse:
@@ -224,9 +234,9 @@ async def health_check() -> HealthResponse:
     response_model=SuccessResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid request"},
-        503: {"model": ErrorResponse, "description": "Service unavailable"}
+        503: {"model": ErrorResponse, "description": "Service unavailable"},
     },
-    tags=["Messages"]
+    tags=["Messages"],
 )
 async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResponse:
     """
@@ -259,7 +269,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
         logger.warning(f"Schema validation failed: errors={e.errors()}")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     message_id = validated_message.ID
@@ -272,7 +282,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
         )
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     logger.info(f"Sending message to gateway: message_id={message_id}")
@@ -282,17 +292,14 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
         await gateway_client.send_message(validated_message.model_dump(by_alias=True))
         logger.info(f"Message sent successfully: message_id={message_id}")
 
-        return SuccessResponse(
-            request_id=request_id,
-            message_id=message_id
-        )
+        return SuccessResponse(request_id=request_id, message_id=message_id)
 
     except GatewayUnavailableError as e:
         logger.error(f"Gateway unavailable: message_id={message_id}, error={e}")
         _store_error("gateway_unavailable", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     except GatewayError as e:
@@ -300,7 +307,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
         _store_error("gateway_error", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
 
@@ -309,9 +316,9 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
     response_model=SuccessResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid request"},
-        500: {"model": ErrorResponse, "description": "Internal server error"}
+        500: {"model": ErrorResponse, "description": "Internal server error"},
     },
-    tags=["DMZ"]
+    tags=["DMZ"],
 )
 async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessResponse:
     """
@@ -343,7 +350,7 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
         logger.warning("Request rejected: not from Gateway origin")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     # Validate message schema
@@ -353,7 +360,7 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
         logger.warning(f"Schema validation failed: errors={e.errors()}")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     message_id = validated_message.ID
@@ -366,25 +373,26 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
         )
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )
 
     logger.info(f"Receiving message from gateway: message_id={message_id}")
 
     # Write to disk atomically
     try:
-        file_path = file_store.write_message(validated_message.model_dump(by_alias=True))
-        logger.info(f"Message written to disk: message_id={message_id}, path={file_path}")
-
-        return SuccessResponse(
-            request_id=request_id,
-            message_id=message_id
+        file_path = file_store.write_message(
+            validated_message.model_dump(by_alias=True)
         )
+        logger.info(
+            f"Message written to disk: message_id={message_id}, path={file_path}"
+        )
+
+        return SuccessResponse(request_id=request_id, message_id=message_id)
 
     except FileStoreError as e:
         logger.error(f"Failed to write message: message_id={message_id}, error={e}")
         _store_error("file_write_error", str(e), message_id, request_id)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=ErrorResponse(request_id=request_id).model_dump()
+            content=ErrorResponse(request_id=request_id).model_dump(),
         )

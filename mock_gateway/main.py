@@ -8,6 +8,7 @@ Message routing:
   Messages received are forwarded to BOTH sides so each side can store them.
   In production the gateway would route based on certificates/headers.
 """
+
 import json
 import os
 from datetime import datetime
@@ -42,7 +43,9 @@ async def _forward_message(url: str, body: dict, label: str) -> None:
         if response.status_code < 300:
             print(f"[GATEWAY] Forwarded to {label}: {response.status_code}")
         else:
-            print(f"[GATEWAY] {label} rejected message: {response.status_code} — {response.text[:120]}")
+            print(
+                f"[GATEWAY] {label} rejected message: {response.status_code} — {response.text[:120]}"
+            )
     except Exception as e:
         print(f"[GATEWAY] Could not forward to {label}: {e}")
 
@@ -65,27 +68,18 @@ async def _handle_message(request: Request):
         print(f"[GATEWAY] Saved to: {filename}")
 
         # Forward to both sides so each stores the message
-        await _forward_message(
-            f"{LOW_SIDE_URL}/dmz/messages", body, "low-side"
-        )
-        await _forward_message(
-            f"{CORPORATE_URL}/dmz/messages", body, "corporate"
-        )
+        await _forward_message(f"{LOW_SIDE_URL}/dmz/messages", body, "low-side")
+        await _forward_message(f"{CORPORATE_URL}/dmz/messages", body, "corporate")
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={
-                "status": "accepted",
-                "message_id": message_id,
-                "forwarded": True
-            }
+            content={"status": "accepted", "message_id": message_id, "forwarded": True},
         )
 
     except Exception as e:
         print(f"[GATEWAY] Error: {e}")
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": str(e)}
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
         )
 
 
@@ -108,10 +102,7 @@ async def list_messages():
     messages = []
     for f in files[:20]:  # Last 20
         with open(f) as fp:
-            messages.append({
-                "file": f.name,
-                "content": json.load(fp)
-            })
+            messages.append({"file": f.name, "content": json.load(fp)})
     return {"count": len(files), "recent": messages}
 
 
@@ -132,10 +123,7 @@ async def sync_user(request: Request):
         # Forward to low-side
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(
-                    f"{LOW_SIDE_URL}/dmz/users",
-                    json=body
-                )
+                response = await client.post(f"{LOW_SIDE_URL}/dmz/users", json=body)
             if response.status_code < 300:
                 print(f"[GATEWAY] User sync forwarded to low-side: {username}")
             else:
@@ -145,17 +133,17 @@ async def sync_user(request: Request):
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={"status": "accepted", "username": username}
+            content={"status": "accepted", "username": username},
         )
 
     except Exception as e:
         print(f"[GATEWAY] User sync error: {e}")
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": str(e)}
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
         )
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

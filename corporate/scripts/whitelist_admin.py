@@ -46,6 +46,7 @@ You can also edit the whitelist.json file directly:
       }
     }
 """
+
 import argparse
 import os
 import re
@@ -183,13 +184,13 @@ Examples:
   %(prog)s check AAA         Check if AAA is allowed
 
 You can also edit the whitelist.json file directly.
-        """
+        """,
     )
 
     parser.add_argument(
         "--file",
         help="Path to whitelist JSON file (default: from WHITELIST_FILE_PATH env or ./data/whitelist.json)",
-        default=None
+        default=None,
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -198,9 +199,7 @@ You can also edit the whitelist.json file directly.
     add_parser = subparsers.add_parser("add", help="Add a project to the whitelist")
     add_parser.add_argument("project_code", help="3-character project code (A-Z0-9)")
     add_parser.add_argument(
-        "--disabled",
-        action="store_true",
-        help="Add the project in disabled state"
+        "--disabled", action="store_true", help="Add the project in disabled state"
     )
 
     # Enable command
@@ -212,7 +211,9 @@ You can also edit the whitelist.json file directly.
     disable_parser.add_argument("project_code", help="3-character project code")
 
     # Remove command
-    remove_parser = subparsers.add_parser("remove", help="Remove a project from whitelist")
+    remove_parser = subparsers.add_parser(
+        "remove", help="Remove a project from whitelist"
+    )
     remove_parser.add_argument("project_code", help="3-character project code")
 
     # List command

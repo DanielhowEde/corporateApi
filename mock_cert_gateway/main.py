@@ -8,6 +8,7 @@ Endpoints:
   POST /wrap  - Accepts a message JSON, returns it wrapped in a JWT envelope
   GET /health - Health check
 """
+
 import json
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -43,7 +44,7 @@ async def wrap_message(request: Request):
     except Exception:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "Invalid JSON body"}
+            content={"error": "Invalid JSON body"},
         )
 
     now = datetime.now(timezone.utc)
@@ -51,7 +52,9 @@ async def wrap_message(request: Request):
 
     # Build a mock JWT token (header.payload.signature format, base64-like)
     message_id = body.get("ID", str(uuid.uuid4()))
-    mock_token = f"eyJhbGciOiJSUzI1NiJ9.{message_id}.mock_signature_{uuid.uuid4().hex[:16]}"
+    mock_token = (
+        f"eyJhbGciOiJSUzI1NiJ9.{message_id}.mock_signature_{uuid.uuid4().hex[:16]}"
+    )
 
     wrapped = {
         "token": mock_token,

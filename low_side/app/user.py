@@ -6,6 +6,7 @@ Allows low-side users to:
 - Change password (required on first login)
 - Send messages to corporate via the DMZ Gateway
 """
+
 import json
 import uuid
 from datetime import datetime
@@ -43,9 +44,9 @@ def _require_auth(session_token: Optional[str]) -> tuple:
         return (
             RedirectResponse(
                 url="/user/login?error=Please+login+to+continue",
-                status_code=status.HTTP_303_SEE_OTHER
+                status_code=status.HTTP_303_SEE_OTHER,
             ),
-            None
+            None,
         )
     return (None, username)
 
@@ -54,22 +55,24 @@ def _require_auth(session_token: Optional[str]) -> tuple:
 # Authentication
 # =============================================================================
 
+
 @router.get("/login", response_class=HTMLResponse, name="ls_user_login")
 async def login_page(request: Request, error: str = "", message: str = ""):
     """Login page."""
-    return templates.TemplateResponse("user/login.html", {
-        "request": request,
-        "title": "Login",
-        "error": error,
-        "message": message,
-    })
+    return templates.TemplateResponse(
+        "user/login.html",
+        {
+            "request": request,
+            "title": "Login",
+            "error": error,
+            "message": message,
+        },
+    )
 
 
 @router.post("/login", name="ls_user_login_submit")
 async def login_submit(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...)
+    request: Request, username: str = Form(...), password: str = Form(...)
 ):
     """Handle login form submission."""
     username = username.strip()
@@ -81,12 +84,11 @@ async def login_submit(
         if auth.user_must_change_password(username):
             response = RedirectResponse(
                 url="/user/change-password?required=1",
-                status_code=status.HTTP_303_SEE_OTHER
+                status_code=status.HTTP_303_SEE_OTHER,
             )
         else:
             response = RedirectResponse(
-                url="/user/",
-                status_code=status.HTTP_303_SEE_OTHER
+                url="/user/", status_code=status.HTTP_303_SEE_OTHER
             )
 
         response.set_cookie(
@@ -94,14 +96,14 @@ async def login_submit(
             value=session_token,
             httponly=True,
             samesite="lax",
-            max_age=8 * 60 * 60
+            max_age=8 * 60 * 60,
         )
         return response
 
     logger.warning(f"Failed login attempt: {username}")
     return RedirectResponse(
         url="/user/login?error=Invalid+username+or+password",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -112,7 +114,7 @@ async def logout(session_token: Optional[str] = Cookie(None)):
         auth.invalidate_session(session_token)
     response = RedirectResponse(
         url="/user/login?message=You+have+been+logged+out",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
     response.delete_cookie("session_token")
     return response
@@ -122,13 +124,16 @@ async def logout(session_token: Optional[str] = Cookie(None)):
 # Password Change
 # =============================================================================
 
-@router.get("/change-password", response_class=HTMLResponse, name="ls_user_change_password")
+
+@router.get(
+    "/change-password", response_class=HTMLResponse, name="ls_user_change_password"
+)
 async def change_password_page(
     request: Request,
     required: str = "",
     error: str = "",
     message: str = "",
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Password change page."""
     redirect, username = _require_auth(session_token)
@@ -137,14 +142,17 @@ async def change_password_page(
 
     is_required = required == "1" or auth.user_must_change_password(username)
 
-    return templates.TemplateResponse("user/change_password.html", {
-        "request": request,
-        "title": "Change Password",
-        "username": username,
-        "is_required": is_required,
-        "error": error,
-        "message": message,
-    })
+    return templates.TemplateResponse(
+        "user/change_password.html",
+        {
+            "request": request,
+            "title": "Change Password",
+            "username": username,
+            "is_required": is_required,
+            "error": error,
+            "message": message,
+        },
+    )
 
 
 @router.post("/change-password", name="ls_user_change_password_submit")
@@ -153,7 +161,7 @@ async def change_password_submit(
     current_password: str = Form(...),
     new_password: str = Form(...),
     confirm_password: str = Form(...),
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Handle password change form submission."""
     redirect, username = _require_auth(session_token)
@@ -163,19 +171,19 @@ async def change_password_submit(
     if not auth.verify_user_credentials(username, current_password):
         return RedirectResponse(
             url="/user/change-password?error=Current+password+is+incorrect",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     if new_password != confirm_password:
         return RedirectResponse(
             url="/user/change-password?error=New+passwords+do+not+match",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     if current_password == new_password:
         return RedirectResponse(
             url="/user/change-password?error=New+password+must+be+different+from+current+password",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     success, msg = auth.update_user_password(username, new_password)
@@ -184,12 +192,12 @@ async def change_password_submit(
         logger.info(f"User changed password: {username}")
         return RedirectResponse(
             url="/user/?message=Password+changed+successfully",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     return RedirectResponse(
         url=f"/user/change-password?error={msg.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -197,11 +205,10 @@ async def change_password_submit(
 # User Pages (Protected)
 # =============================================================================
 
+
 @router.get("/", response_class=HTMLResponse, name="ls_user_home")
 async def home(
-    request: Request,
-    message: str = "",
-    session_token: Optional[str] = Cookie(None)
+    request: Request, message: str = "", session_token: Optional[str] = Cookie(None)
 ):
     """User home page."""
     redirect, username = _require_auth(session_token)
@@ -211,15 +218,18 @@ async def home(
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    return templates.TemplateResponse("user/home.html", {
-        "request": request,
-        "title": "User Portal",
-        "username": username,
-        "message": message,
-    })
+    return templates.TemplateResponse(
+        "user/home.html",
+        {
+            "request": request,
+            "title": "User Portal",
+            "username": username,
+            "message": message,
+        },
+    )
 
 
 @router.get("/send", response_class=HTMLResponse, name="ls_user_send")
@@ -227,7 +237,7 @@ async def send_message_page(
     request: Request,
     message: str = "",
     error: str = "",
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Message sending page."""
     redirect, username = _require_auth(session_token)
@@ -237,21 +247,24 @@ async def send_message_page(
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     default_id = str(uuid.uuid4())
     default_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-    return templates.TemplateResponse("user/send_message.html", {
-        "request": request,
-        "title": "Send Message",
-        "username": username,
-        "default_id": default_id,
-        "default_timestamp": default_timestamp,
-        "message": message,
-        "error": error,
-    })
+    return templates.TemplateResponse(
+        "user/send_message.html",
+        {
+            "request": request,
+            "title": "Send Message",
+            "username": username,
+            "default_id": default_id,
+            "default_timestamp": default_timestamp,
+            "message": message,
+            "error": error,
+        },
+    )
 
 
 @router.post("/send", name="ls_user_send_submit")
@@ -263,7 +276,7 @@ async def send_message_submit(
     timestamp: str = Form(...),
     test_status: str = Form(...),
     data_json: str = Form("{}"),
-    session_token: Optional[str] = Cookie(None)
+    session_token: Optional[str] = Cookie(None),
 ):
     """Handle message form submission."""
     from .gateway_client import GatewayError, GatewayUnavailableError
@@ -277,7 +290,7 @@ async def send_message_submit(
     if auth.user_must_change_password(username):
         return RedirectResponse(
             url="/user/change-password?required=1",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     # Parse data JSON
@@ -288,12 +301,11 @@ async def send_message_submit(
     except json.JSONDecodeError as e:
         return RedirectResponse(
             url=f"/user/send?error=Invalid+JSON+in+Data+field:+{str(e)[:50]}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     except ValueError as e:
         return RedirectResponse(
-            url=f"/user/send?error={str(e)}",
-            status_code=status.HTTP_303_SEE_OTHER
+            url=f"/user/send?error={str(e)}", status_code=status.HTTP_303_SEE_OTHER
         )
 
     message_data = {
@@ -302,7 +314,7 @@ async def send_message_submit(
         "Test ID": test_id.strip(),
         "Timestamp": timestamp.strip(),
         "Test Status": test_status.strip(),
-        "Data": data_dict
+        "Data": data_dict,
     }
 
     try:
@@ -311,13 +323,13 @@ async def send_message_submit(
         error_msg = str(e)[:100].replace(" ", "+")
         return RedirectResponse(
             url=f"/user/send?error=Validation+failed:+{error_msg}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     if not gateway_client:
         return RedirectResponse(
             url="/user/send?error=Gateway+client+not+configured",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     try:
@@ -325,15 +337,15 @@ async def send_message_submit(
         logger.info(f"User {username} sent message: {validated_message.ID}")
         return RedirectResponse(
             url=f"/user/send?message=Message+sent+successfully!+ID:+{validated_message.ID}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     except GatewayUnavailableError:
         return RedirectResponse(
             url="/user/send?error=Gateway+unavailable.+Please+try+again+later.",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     except GatewayError:
         return RedirectResponse(
             url="/user/send?error=Gateway+rejected+the+message.",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )

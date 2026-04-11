@@ -4,6 +4,7 @@ Configuration management for Low-Side DMZ API.
 All configuration is loaded from environment variables with sensible defaults.
 A config file (config.json) can optionally be used to set defaults.
 """
+
 import json
 import os
 from pathlib import Path
@@ -29,16 +30,12 @@ class Config:
         # Master directory for message storage
         # Messages stored as: ${MASTER_DIR}/${Project}/YYYY/MM/DD/{message_id}.json
         "MASTER_DIR": "./data/messages",
-
         # Temporary directory for atomic writes
         "TMP_DIR": "./data/tmp",
-
         # Gateway URL
         "GATEWAY_URL": "http://localhost:8000",
-
         # Error directory for storing application errors
         "ERROR_DIR": "./data/errors",
-
         # Users file path (synced from corporate via gateway)
         "USERS_FILE_PATH": "./data/users.json",
     }

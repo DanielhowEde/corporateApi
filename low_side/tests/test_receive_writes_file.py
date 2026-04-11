@@ -1,4 +1,5 @@
 """Tests for file writing functionality."""
+
 import json
 import os
 import uuid
@@ -27,10 +28,7 @@ def valid_message():
         "Area": "Test Area",
         "Status": "Inprogress",
         "Date": "30012026T11:22:33",
-        "Data": {
-            "random": "A",
-            "name": "john smith"
-        }
+        "Data": {"random": "A", "name": "john smith"},
     }
 
 
@@ -58,8 +56,12 @@ class TestFileStore:
 
         # Date is 30012026 -> 2026/01/30
         expected_path = (
-            temp_data_dir / "incoming" / "2026" / "01" / "30" /
-            f"{valid_message['ID']}.json"
+            temp_data_dir
+            / "incoming"
+            / "2026"
+            / "01"
+            / "30"
+            / f"{valid_message['ID']}.json"
         )
         assert result_path == expected_path
         assert result_path.exists()
@@ -135,6 +137,7 @@ class TestReceiveEndpointFileWriting:
 
         # Re-initialize file store with new data dir
         from app import main
+
         main.file_store = FileStore(data_dir=str(data_dir))
 
         response = client.post("/dmz/messages", json=valid_message)
@@ -143,8 +146,7 @@ class TestReceiveEndpointFileWriting:
 
         # Verify file was written
         expected_path = (
-            data_dir / "incoming" / "2026" / "01" / "30" /
-            f"{valid_message['ID']}.json"
+            data_dir / "incoming" / "2026" / "01" / "30" / f"{valid_message['ID']}.json"
         )
         assert expected_path.exists()
 
@@ -152,13 +154,10 @@ class TestReceiveEndpointFileWriting:
             written_data = json.load(f)
         assert written_data["ID"] == valid_message["ID"]
 
-    def test_receive_returns_500_on_disk_error(
-        self, client, valid_message, mocker
-    ):
+    def test_receive_returns_500_on_disk_error(self, client, valid_message, mocker):
         """Test that disk write errors return 500 with generic error."""
         mocker.patch(
-            "app.main.file_store.write_message",
-            side_effect=FileStoreError("Disk full")
+            "app.main.file_store.write_message", side_effect=FileStoreError("Disk full")
         )
 
         response = client.post("/dmz/messages", json=valid_message)
@@ -178,6 +177,7 @@ class TestReceiveEndpointFileWriting:
         monkeypatch.setenv("DATA_DIR", str(data_dir))
 
         from app import main
+
         main.file_store = FileStore(data_dir=str(data_dir))
 
         response = client.post("/dmz/messages", json=valid_message)

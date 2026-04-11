@@ -10,6 +10,7 @@ User roles:
 - "admin": Can access admin panel, manage users and projects
 - "user": Can access user portal, send messages
 """
+
 import hashlib
 import json
 import os
@@ -94,7 +95,7 @@ def _ensure_default_admin() -> None:
             "role": "admin",
             "enabled": True,
             "must_change_password": True,
-            "created": datetime.now().isoformat()
+            "created": datetime.now().isoformat(),
         }
         _save_users(users)
         logger.info("Default admin account created")
@@ -107,6 +108,7 @@ _ensure_default_admin()
 # =============================================================================
 # Admin Authentication
 # =============================================================================
+
 
 def verify_admin_credentials(username: str, password: str) -> bool:
     """Verify admin username and password."""
@@ -126,11 +128,7 @@ def create_admin_session(username: str) -> str:
     """Create a new admin session."""
     token = secrets.token_urlsafe(32)
     expiry = datetime.now().timestamp() + (8 * 60 * 60)  # 8 hours
-    active_sessions[token] = {
-        "type": "admin",
-        "username": username,
-        "expiry": expiry
-    }
+    active_sessions[token] = {"type": "admin", "username": username, "expiry": expiry}
     logger.info(f"Admin session created: {username}")
     return token
 
@@ -165,6 +163,7 @@ def get_admin_username_from_session(token: Optional[str]) -> Optional[str]:
 # User Authentication
 # =============================================================================
 
+
 def verify_user_credentials(username: str, password: str) -> bool:
     """Verify user credentials."""
     users = _load_users()
@@ -183,11 +182,7 @@ def create_user_session(username: str) -> str:
     """Create a new user session."""
     token = secrets.token_urlsafe(32)
     expiry = datetime.now().timestamp() + (8 * 60 * 60)  # 8 hours
-    active_sessions[token] = {
-        "type": "user",
-        "username": username,
-        "expiry": expiry
-    }
+    active_sessions[token] = {"type": "user", "username": username, "expiry": expiry}
     logger.info(f"User session created: {username}")
     return token
 
@@ -218,7 +213,10 @@ def invalidate_session(token: str) -> None:
 # Admin User Management
 # =============================================================================
 
-def create_admin_user(username: str, password: str, enabled: bool = True) -> Tuple[bool, str]:
+
+def create_admin_user(
+    username: str, password: str, enabled: bool = True
+) -> Tuple[bool, str]:
     """
     Create a new admin account.
     Returns (success, message).
@@ -237,7 +235,7 @@ def create_admin_user(username: str, password: str, enabled: bool = True) -> Tup
         "role": "admin",
         "enabled": enabled,
         "must_change_password": True,
-        "created": datetime.now().isoformat()
+        "created": datetime.now().isoformat(),
     }
 
     if _save_users(users):
@@ -286,7 +284,13 @@ def list_admins() -> List[Tuple[str, bool, str]]:
 # Regular User Management (Admin Functions)
 # =============================================================================
 
-def create_user(username: str, password: str, enabled: bool = True, must_change_password: bool = True) -> Tuple[bool, str]:
+
+def create_user(
+    username: str,
+    password: str,
+    enabled: bool = True,
+    must_change_password: bool = True,
+) -> Tuple[bool, str]:
     """
     Create a new user account.
     Returns (success, message).
@@ -305,7 +309,7 @@ def create_user(username: str, password: str, enabled: bool = True, must_change_
         "role": "user",
         "enabled": enabled,
         "must_change_password": must_change_password,
-        "created": datetime.now().isoformat()
+        "created": datetime.now().isoformat(),
     }
 
     if _save_users(users):
@@ -314,7 +318,9 @@ def create_user(username: str, password: str, enabled: bool = True, must_change_
     return False, "Failed to save user"
 
 
-def update_user_password(username: str, new_password: str, clear_must_change: bool = True) -> Tuple[bool, str]:
+def update_user_password(
+    username: str, new_password: str, clear_must_change: bool = True
+) -> Tuple[bool, str]:
     """Update a user's or admin's password."""
     if not new_password or len(new_password) < 6:
         return False, "Password must be at least 6 characters"

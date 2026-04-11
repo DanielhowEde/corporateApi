@@ -13,6 +13,7 @@ File format (whitelist.json):
   }
 }
 """
+
 import json
 import os
 import threading
@@ -26,6 +27,7 @@ logger = setup_logging("whitelist")
 
 class WhitelistError(Exception):
     """Exception raised for whitelist operations."""
+
     pass
 
 
@@ -57,10 +59,7 @@ class ProjectWhitelist:
                        WHITELIST_FILE_PATH env var or defaults to ./data/whitelist.json
         """
         self.file_path = Path(
-            file_path or os.environ.get(
-                "WHITELIST_FILE_PATH",
-                "./data/whitelist.json"
-            )
+            file_path or os.environ.get("WHITELIST_FILE_PATH", "./data/whitelist.json")
         )
         self._lock = threading.Lock()
         self._cache: Dict[str, dict] = {}
@@ -240,10 +239,9 @@ class ProjectWhitelist:
             List of tuples (project_code, enabled)
         """
         projects = self._get_projects()
-        return sorted([
-            (code, proj.get("enabled", False))
-            for code, proj in projects.items()
-        ])
+        return sorted(
+            [(code, proj.get("enabled", False)) for code, proj in projects.items()]
+        )
 
     def close(self) -> None:
         """No-op for API compatibility (file-based needs no cleanup)."""

@@ -8,6 +8,7 @@ The certificate gateway is an external service that:
 
 Messages must be cert-wrapped before being sent to the DMZ Gateway.
 """
+
 import asyncio
 import os
 from datetime import datetime, timezone
@@ -22,11 +23,13 @@ logger = setup_logging("cert_client")
 
 class CertGatewayError(Exception):
     """Exception raised when certificate gateway communication fails."""
+
     pass
 
 
 class CertGatewayUnavailableError(CertGatewayError):
     """Exception raised when the certificate gateway is unavailable."""
+
     pass
 
 
@@ -43,11 +46,10 @@ class CertClient:
     INITIAL_BACKOFF = 0.5
 
     def __init__(
-        self,
-        base_url: Optional[str] = None,
-        timeout: float = DEFAULT_TIMEOUT
+        self, base_url: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT
     ):
         from .config import config
+
         self.base_url = base_url or config.cert_gateway_url
         self.timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
@@ -56,8 +58,7 @@ class CertClient:
         """Get or create the async HTTP client."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=httpx.Timeout(self.timeout)
+                base_url=self.base_url, timeout=httpx.Timeout(self.timeout)
             )
         return self._client
 
@@ -102,19 +103,19 @@ class CertClient:
                 )
 
                 response = await client.post(
-                    "/wrap",
-                    json=message_data,
-                    headers={"X-Request-ID": request_id}
+                    "/wrap", json=message_data, headers={"X-Request-ID": request_id}
                 )
 
                 if response.status_code >= 500:
                     logger.warning(
                         f"Cert gateway returned {response.status_code}: message_id={message_id}"
                     )
-                    last_error = CertGatewayError(f"Cert gateway returned {response.status_code}")
+                    last_error = CertGatewayError(
+                        f"Cert gateway returned {response.status_code}"
+                    )
 
                     if attempt < self.MAX_RETRIES:
-                        backoff = self.INITIAL_BACKOFF * (2 ** attempt)
+                        backoff = self.INITIAL_BACKOFF * (2**attempt)
                         await asyncio.sleep(backoff)
                         continue
                     else:
@@ -127,25 +128,33 @@ class CertClient:
                         f"Cert gateway rejected message: message_id={message_id}, "
                         f"status={response.status_code}"
                     )
-                    raise CertGatewayError(f"Cert gateway rejected message: {response.status_code}")
+                    raise CertGatewayError(
+                        f"Cert gateway rejected message: {response.status_code}"
+                    )
 
                 wrapped = response.json()
-                logger.info(f"Message cert-wrapped successfully: message_id={message_id}")
+                logger.info(
+                    f"Message cert-wrapped successfully: message_id={message_id}"
+                )
                 return wrapped
 
             except httpx.TimeoutException as e:
-                logger.warning(f"Cert gateway timeout: message_id={message_id}, attempt={attempt + 1}")
+                logger.warning(
+                    f"Cert gateway timeout: message_id={message_id}, attempt={attempt + 1}"
+                )
                 last_error = e
                 if attempt < self.MAX_RETRIES:
-                    backoff = self.INITIAL_BACKOFF * (2 ** attempt)
+                    backoff = self.INITIAL_BACKOFF * (2**attempt)
                     await asyncio.sleep(backoff)
                     continue
 
             except httpx.ConnectError as e:
-                logger.warning(f"Cert gateway connection error: message_id={message_id}, attempt={attempt + 1}")
+                logger.warning(
+                    f"Cert gateway connection error: message_id={message_id}, attempt={attempt + 1}"
+                )
                 last_error = e
                 if attempt < self.MAX_RETRIES:
-                    backoff = self.INITIAL_BACKOFF * (2 ** attempt)
+                    backoff = self.INITIAL_BACKOFF * (2**attempt)
                     await asyncio.sleep(backoff)
                     continue
 

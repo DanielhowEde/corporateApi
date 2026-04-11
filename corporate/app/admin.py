@@ -7,6 +7,7 @@ Provides a simple web UI for:
 - Managing user accounts
 - Viewing certificate status (placeholder)
 """
+
 import re
 from pathlib import Path
 from typing import Optional
@@ -36,6 +37,7 @@ def get_branding() -> dict:
         "network_label": config.network_label,
         "full_name": config.full_name,
     }
+
 
 # Create router
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -92,22 +94,19 @@ def require_admin_auth(session_token: Optional[str]) -> bool:
 # Admin Authentication
 # =============================================================================
 
+
 @router.get("/login", response_class=HTMLResponse, name="admin_login")
 async def admin_login_page(request: Request, error: str = ""):
     """Admin login page."""
-    return templates.TemplateResponse("admin/login.html", {
-        "request": request,
-        "title": "Admin Login",
-        "error": error,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "admin/login.html",
+        {"request": request, "title": "Admin Login", "error": error, **get_branding()},
+    )
 
 
 @router.post("/login", name="admin_login_submit")
 async def admin_login_submit(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...)
+    request: Request, username: str = Form(...), password: str = Form(...)
 ):
     """Process admin login."""
     username = username.strip()
@@ -115,22 +114,21 @@ async def admin_login_submit(
         token = auth.create_admin_session(username)
         logger.info(f"Admin logged in: {username}")
         response = RedirectResponse(
-            url="/admin/",
-            status_code=status.HTTP_303_SEE_OTHER
+            url="/admin/", status_code=status.HTTP_303_SEE_OTHER
         )
         response.set_cookie(
             key="admin_session",
             value=token,
             httponly=True,
             samesite="lax",
-            max_age=8 * 60 * 60  # 8 hours
+            max_age=8 * 60 * 60,  # 8 hours
         )
         return response
 
     logger.warning(f"Failed admin login attempt: {username}")
     return RedirectResponse(
         url="/admin/login?error=Invalid+username+or+password",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -142,8 +140,7 @@ async def admin_logout(admin_session: Optional[str] = Cookie(None)):
         logger.info("Admin logged out")
 
     response = RedirectResponse(
-        url="/admin/login",
-        status_code=status.HTTP_303_SEE_OTHER
+        url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
     )
     response.delete_cookie("admin_session")
     return response
@@ -153,20 +150,21 @@ async def admin_logout(admin_session: Optional[str] = Cookie(None)):
 # Admin Web Pages (Protected)
 # =============================================================================
 
+
 @router.get("/", response_class=HTMLResponse, name="admin_dashboard")
 async def admin_dashboard(
-    request: Request,
-    admin_session: Optional[str] = Cookie(None)
+    request: Request, admin_session: Optional[str] = Cookie(None)
 ):
     """Admin dashboard home page."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
-    return templates.TemplateResponse("admin/dashboard.html", {
-        "request": request,
-        "title": "Admin Dashboard",
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "admin/dashboard.html",
+        {"request": request, "title": "Admin Dashboard", **get_branding()},
+    )
 
 
 @router.get("/projects", response_class=HTMLResponse, name="admin_projects")
@@ -174,21 +172,26 @@ async def admin_projects(
     request: Request,
     message: str = "",
     error: str = "",
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """Project whitelist management page."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     projects = whitelist.list_projects() if whitelist else []
-    return templates.TemplateResponse("admin/projects.html", {
-        "request": request,
-        "title": "Project Whitelist",
-        "projects": projects,
-        "message": message,
-        "error": error,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "admin/projects.html",
+        {
+            "request": request,
+            "title": "Project Whitelist",
+            "projects": projects,
+            "message": message,
+            "error": error,
+            **get_branding(),
+        },
+    )
 
 
 @router.post("/projects/add", name="admin_add_project")
@@ -196,11 +199,13 @@ async def admin_add_project(
     request: Request,
     project_code: str = Form(...),
     enabled: str = Form("off"),
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """Add a new project to the whitelist."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     code = project_code.upper().strip()
     is_enabled = enabled.lower() in ("true", "on", "yes", "1")
@@ -208,7 +213,7 @@ async def admin_add_project(
     if not validate_project_code(code):
         return RedirectResponse(
             url=f"/admin/projects?error=Invalid+project+code.+Must+be+3+uppercase+alphanumeric+characters.",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     try:
@@ -216,79 +221,82 @@ async def admin_add_project(
         logger.info(f"Admin added project: {code}")
         return RedirectResponse(
             url=f"/admin/projects?message=Project+{code}+added+successfully",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     except WhitelistError as e:
         logger.warning(f"Admin failed to add project: {code}, error={e}")
         return RedirectResponse(
             url=f"/admin/projects?error=Project+already+exists",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
 
 @router.post("/projects/{project_code}/enable", name="admin_enable_project")
 async def admin_enable_project(
-    project_code: str,
-    admin_session: Optional[str] = Cookie(None)
+    project_code: str, admin_session: Optional[str] = Cookie(None)
 ):
     """Enable a project."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     code = project_code.upper()
     if whitelist.enable_project(code):
         logger.info(f"Admin enabled project: {code}")
         return RedirectResponse(
             url=f"/admin/projects?message=Project+{code}+enabled",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
         url=f"/admin/projects?error=Project+not+found",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
 @router.post("/projects/{project_code}/disable", name="admin_disable_project")
 async def admin_disable_project(
-    project_code: str,
-    admin_session: Optional[str] = Cookie(None)
+    project_code: str, admin_session: Optional[str] = Cookie(None)
 ):
     """Disable a project."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     code = project_code.upper()
     if whitelist.disable_project(code):
         logger.info(f"Admin disabled project: {code}")
         return RedirectResponse(
             url=f"/admin/projects?message=Project+{code}+disabled",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
         url=f"/admin/projects?error=Project+not+found",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
 @router.post("/projects/{project_code}/remove", name="admin_remove_project")
 async def admin_remove_project(
-    project_code: str,
-    admin_session: Optional[str] = Cookie(None)
+    project_code: str, admin_session: Optional[str] = Cookie(None)
 ):
     """Remove a project from the whitelist."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     code = project_code.upper()
     if whitelist.remove_project(code):
         logger.info(f"Admin removed project: {code}")
         return RedirectResponse(
             url=f"/admin/projects?message=Project+{code}+removed",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
         url=f"/admin/projects?error=Project+not+found",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -297,7 +305,7 @@ async def admin_certs(
     request: Request,
     message: str = "",
     error: str = "",
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """
     Certificate management page.
@@ -306,7 +314,9 @@ async def admin_certs(
     and PKI infrastructure. This page provides visibility and documentation.
     """
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     # Placeholder cert info - in production, this would read from cert files or API
     certs = [
@@ -315,57 +325,66 @@ async def admin_certs(
             "subject": "CN=corporate-api.example.com",
             "issuer": "CN=Internal CA",
             "expires": "2027-01-30",
-            "status": "valid"
+            "status": "valid",
         },
         {
             "name": "Gateway Client Cert",
             "subject": "CN=gateway.dmz.example.com",
             "issuer": "CN=Internal CA",
             "expires": "2027-01-30",
-            "status": "valid"
-        }
+            "status": "valid",
+        },
     ]
 
-    return templates.TemplateResponse("admin/certs.html", {
-        "request": request,
-        "title": "Certificate Management",
-        "certs": certs,
-        "message": message,
-        "error": error,
-        "note": "Certificate operations are managed by the PKI team. Contact security@example.com for cert renewal requests.",
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "admin/certs.html",
+        {
+            "request": request,
+            "title": "Certificate Management",
+            "certs": certs,
+            "message": message,
+            "error": error,
+            "note": "Certificate operations are managed by the PKI team. Contact security@example.com for cert renewal requests.",
+            **get_branding(),
+        },
+    )
 
 
 # =============================================================================
 # User Management (Admin Functions)
 # =============================================================================
 
+
 @router.get("/users", response_class=HTMLResponse, name="admin_users")
 async def admin_users(
     request: Request,
     message: str = "",
     error: str = "",
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """User management page."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     users = auth.list_users()
     admins = auth.list_admins()
 
-    return templates.TemplateResponse("admin/users.html", {
-        "request": request,
-        "title": "User Management",
-        "users": users,
-        "admins": admins,
-        "user_count": len(users),
-        "admin_count": len(admins),
-        "message": message,
-        "error": error,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "admin/users.html",
+        {
+            "request": request,
+            "title": "User Management",
+            "users": users,
+            "admins": admins,
+            "user_count": len(users),
+            "admin_count": len(admins),
+            "message": message,
+            "error": error,
+            **get_branding(),
+        },
+    )
 
 
 @router.post("/users/add", name="admin_add_user")
@@ -374,11 +393,13 @@ async def admin_add_user(
     username: str = Form(...),
     password: str = Form(...),
     enabled: str = Form("off"),
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """Create a new user account."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     is_enabled = enabled.lower() in ("true", "on", "yes", "1")
     success, message = auth.create_user(username.strip(), password, is_enabled)
@@ -388,24 +409,23 @@ async def admin_add_user(
         await _sync_user(username.strip(), "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     logger.warning(f"Admin failed to create user: {username}, error={message}")
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
 @router.post("/users/{username}/enable", name="admin_enable_user")
-async def admin_enable_user(
-    username: str,
-    admin_session: Optional[str] = Cookie(None)
-):
+async def admin_enable_user(username: str, admin_session: Optional[str] = Cookie(None)):
     """Enable a user account."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     success, message = auth.enable_user(username)
 
@@ -414,23 +434,24 @@ async def admin_enable_user(
         await _sync_user(username, "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
 @router.post("/users/{username}/disable", name="admin_disable_user")
 async def admin_disable_user(
-    username: str,
-    admin_session: Optional[str] = Cookie(None)
+    username: str, admin_session: Optional[str] = Cookie(None)
 ):
     """Disable a user account."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     success, message = auth.disable_user(username)
 
@@ -439,37 +460,38 @@ async def admin_disable_user(
         await _sync_user(username, "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
 @router.post("/users/{username}/delete", name="admin_delete_user")
-async def admin_delete_user(
-    username: str,
-    admin_session: Optional[str] = Cookie(None)
-):
+async def admin_delete_user(username: str, admin_session: Optional[str] = Cookie(None)):
     """Delete a user account."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     success, message = auth.delete_user(username)
 
     if success:
         logger.info(f"Admin deleted user: {username}")
-        await gateway_client.sync_user({"username": username, "action": "delete"}) if gateway_client else None
+        await gateway_client.sync_user(
+            {"username": username, "action": "delete"}
+        ) if gateway_client else None
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -477,11 +499,13 @@ async def admin_delete_user(
 async def admin_reset_user_password(
     username: str,
     new_password: str = Form(...),
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """Reset a user's password."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     success, message = auth.update_user_password(username, new_password)
 
@@ -490,12 +514,12 @@ async def admin_reset_user_password(
         await _sync_user(username, "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -503,17 +527,20 @@ async def admin_reset_user_password(
 # Admin User Management
 # =============================================================================
 
+
 @router.post("/admins/add", name="admin_add_admin")
 async def admin_add_admin(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
     enabled: str = Form("off"),
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """Create a new admin account."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     is_enabled = enabled.lower() in ("true", "on", "yes", "1")
     success, message = auth.create_admin_user(username.strip(), password, is_enabled)
@@ -522,24 +549,25 @@ async def admin_add_admin(
         logger.info(f"Admin created admin user: {username}")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     logger.warning(f"Admin failed to create admin user: {username}, error={message}")
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
 @router.post("/admins/{username}/delete", name="admin_delete_admin")
 async def admin_delete_admin(
-    username: str,
-    admin_session: Optional[str] = Cookie(None)
+    username: str, admin_session: Optional[str] = Cookie(None)
 ):
     """Delete an admin account (cannot delete the last admin)."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     success, message = auth.delete_admin_user(username)
 
@@ -547,12 +575,12 @@ async def admin_delete_admin(
         logger.info(f"Admin deleted admin user: {username}")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -560,26 +588,32 @@ async def admin_delete_admin(
 # Key Management
 # =============================================================================
 
+
 @router.get("/keys", response_class=HTMLResponse, name="admin_keys")
 async def admin_keys(
     request: Request,
     message: str = "",
     error: str = "",
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """Key management page."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     keys = key_manager.list_keys()
-    return templates.TemplateResponse("admin/keys.html", {
-        "request": request,
-        "title": "Key Management",
-        "keys": keys,
-        "message": message,
-        "error": error,
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "admin/keys.html",
+        {
+            "request": request,
+            "title": "Key Management",
+            "keys": keys,
+            "message": message,
+            "error": error,
+            **get_branding(),
+        },
+    )
 
 
 @router.post("/keys/generate", name="admin_generate_key")
@@ -587,17 +621,19 @@ async def admin_generate_key(
     request: Request,
     key_name: str = Form(...),
     key_size: int = Form(2048),
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """Generate a new RSA key pair."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     name = key_name.strip()
     if not name:
         return RedirectResponse(
             url="/admin/keys?error=Key+name+is+required",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     try:
@@ -605,87 +641,87 @@ async def admin_generate_key(
         logger.info(f"Admin generated key: {metadata['key_id']}, name={name}")
         return RedirectResponse(
             url=f"/admin/keys?message=Key+pair+generated+successfully:+{name}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     except KeyManagerError as e:
         logger.error(f"Key generation failed: {e}")
         return RedirectResponse(
             url=f"/admin/keys?error={str(e)[:80].replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
 
-@router.get("/keys/{key_id}/public", response_class=HTMLResponse, name="admin_view_public_key")
+@router.get(
+    "/keys/{key_id}/public", response_class=HTMLResponse, name="admin_view_public_key"
+)
 async def admin_view_public_key(
-    request: Request,
-    key_id: str,
-    admin_session: Optional[str] = Cookie(None)
+    request: Request, key_id: str, admin_session: Optional[str] = Cookie(None)
 ):
     """View a public key."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     metadata = key_manager.get_key(key_id)
     public_pem = key_manager.get_public_key_pem(key_id)
 
     if not metadata or not public_pem:
         return RedirectResponse(
-            url="/admin/keys?error=Key+not+found",
-            status_code=status.HTTP_303_SEE_OTHER
+            url="/admin/keys?error=Key+not+found", status_code=status.HTTP_303_SEE_OTHER
         )
 
     keys = key_manager.list_keys()
-    return templates.TemplateResponse("admin/keys.html", {
-        "request": request,
-        "title": "Key Management",
-        "keys": keys,
-        "message": "",
-        "error": "",
-        "public_key_display": public_pem,
-        "public_key_name": metadata.get("name", key_id),
-        **get_branding()
-    })
+    return templates.TemplateResponse(
+        "admin/keys.html",
+        {
+            "request": request,
+            "title": "Key Management",
+            "keys": keys,
+            "message": "",
+            "error": "",
+            "public_key_display": public_pem,
+            "public_key_name": metadata.get("name", key_id),
+            **get_branding(),
+        },
+    )
 
 
 @router.post("/keys/{key_id}/revoke", name="admin_revoke_key")
-async def admin_revoke_key(
-    key_id: str,
-    admin_session: Optional[str] = Cookie(None)
-):
+async def admin_revoke_key(key_id: str, admin_session: Optional[str] = Cookie(None)):
     """Revoke a key pair."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     if key_manager.revoke_key(key_id):
         logger.info(f"Admin revoked key: {key_id}")
         return RedirectResponse(
             url="/admin/keys?message=Key+revoked+successfully",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
-        url="/admin/keys?error=Key+not+found",
-        status_code=status.HTTP_303_SEE_OTHER
+        url="/admin/keys?error=Key+not+found", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
 @router.post("/keys/{key_id}/delete", name="admin_delete_key")
-async def admin_delete_key(
-    key_id: str,
-    admin_session: Optional[str] = Cookie(None)
-):
+async def admin_delete_key(key_id: str, admin_session: Optional[str] = Cookie(None)):
     """Delete a key pair permanently."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     if key_manager.delete_key(key_id):
         logger.info(f"Admin deleted key: {key_id}")
         return RedirectResponse(
             url="/admin/keys?message=Key+deleted+permanently",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
-        url="/admin/keys?error=Key+not+found",
-        status_code=status.HTTP_303_SEE_OTHER
+        url="/admin/keys?error=Key+not+found", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
@@ -693,11 +729,13 @@ async def admin_delete_key(
 async def admin_reset_admin_password(
     username: str,
     new_password: str = Form(...),
-    admin_session: Optional[str] = Cookie(None)
+    admin_session: Optional[str] = Cookie(None),
 ):
     """Reset an admin's password."""
     if not require_admin_auth(admin_session):
-        return RedirectResponse(url="/admin/login", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
 
     success, message = auth.update_user_password(username, new_password)
 
@@ -705,10 +743,10 @@ async def admin_reset_admin_password(
         logger.info(f"Admin reset password for admin: {username}")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
-            status_code=status.HTTP_303_SEE_OTHER
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
     return RedirectResponse(
         url=f"/admin/users?error={message.replace(' ', '+')}",
-        status_code=status.HTTP_303_SEE_OTHER
+        status_code=status.HTTP_303_SEE_OTHER,
     )
