@@ -606,6 +606,88 @@ async def user_pending(
     })
 
 
+@router.post("/pending/bulk-send", name="user_bulk_send_pending")
+async def user_bulk_send_pending(
+    request: Request,
+    message_ids: list[str] = Form(default=[]),
+    session_token: Optional[str] = Cookie(None)
+):
+    """Send multiple selected pending messages."""
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    from .gateway_client import GatewayError, GatewayUnavailableError
+    from .file_store import FileStoreError
+
+    if not file_store or not gateway_client:
+        return RedirectResponse(
+            url="/user/pending?error=Service+not+configured",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    if not message_ids:
+        return RedirectResponse(
+            url="/user/pending?error=No+messages+selected",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    sent = 0
+    failed = 0
+    for msg_id in message_ids:
+        try:
+            record = file_store.get_pending(msg_id)
+            wrapped = record.get("wrapped", record.get("message", {}))
+            await gateway_client.send_wrapped(wrapped)
+            file_store.remove_pending(msg_id)
+            sent += 1
+            logger.info(f"User {username} sent pending message: {msg_id}")
+        except (GatewayUnavailableError, GatewayError) as e:
+            failed += 1
+            logger.error(f"Failed to send pending message {msg_id}: {e}")
+        except FileStoreError:
+            failed += 1
+
+    if failed == 0:
+        return RedirectResponse(
+            url=f"/user/pending?message={sent}+message(s)+sent+successfully",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    return RedirectResponse(
+        url=f"/user/pending?error={sent}+sent,+{failed}+failed.+Check+gateway+availability.",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/pending/bulk-discard", name="user_bulk_discard_pending")
+async def user_bulk_discard_pending(
+    request: Request,
+    message_ids: list[str] = Form(default=[]),
+    session_token: Optional[str] = Cookie(None)
+):
+    """Discard multiple selected pending messages."""
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    if not message_ids:
+        return RedirectResponse(
+            url="/user/pending?error=No+messages+selected",
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    discarded = 0
+    for msg_id in message_ids:
+        if file_store and file_store.remove_pending(msg_id):
+            discarded += 1
+            logger.info(f"User {username} discarded pending message: {msg_id}")
+
+    return RedirectResponse(
+        url=f"/user/pending?message={discarded}+message(s)+discarded",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
 @router.post("/pending/{message_id}/send", name="user_send_pending")
 async def user_send_pending(
     request: Request,
@@ -634,7 +716,6 @@ async def user_send_pending(
             status_code=status.HTTP_303_SEE_OTHER
         )
 
-    # Send the wrapped payload to the gateway
     wrapped = record.get("wrapped", record.get("message", {}))
     try:
         await gateway_client.send_wrapped(wrapped)

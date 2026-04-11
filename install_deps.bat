@@ -30,6 +30,11 @@ python -m pip install fastapi uvicorn httpx
 if errorlevel 1 goto :error
 
 echo.
+echo Installing Mock Cert Gateway dependencies...
+python -m pip install -r "%REPO_DIR%mock_cert_gateway\requirements.txt"
+if errorlevel 1 goto :error
+
+echo.
 echo ========================================
 echo  All dependencies installed successfully
 echo ========================================

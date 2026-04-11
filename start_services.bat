@@ -24,6 +24,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Point corporate at the local mock cert gateway
+set CERT_GATEWAY_URL=http://localhost:8003
+
+echo Starting Mock Cert Gateway on port 8003...
+start "Mock Cert Gateway :8003" cmd /k "cd /d "%REPO_DIR%mock_cert_gateway" && python -m uvicorn main:app --reload --port 8003"
+
+timeout /t 1 /nobreak >nul
+
 echo Starting Mock Gateway on port 8000...
 start "Mock Gateway :8000" cmd /k "cd /d "%REPO_DIR%mock_gateway" && python -m uvicorn main:app --reload --port 8000"
 
@@ -42,12 +50,13 @@ echo ========================================
 echo  All services starting...
 echo ========================================
 echo.
-echo  Mock Gateway:     http://localhost:8000
-echo  Corporate Admin:  http://localhost:8001/admin/
-echo  Corporate User:   http://localhost:8001/user/
-echo  Corporate Docs:   http://localhost:8001/docs
-echo  Low-Side User:    http://localhost:8002/user/
-echo  Low-Side Docs:    http://localhost:8002/docs
+echo  Mock Cert Gateway: http://localhost:8003
+echo  Mock Gateway:      http://localhost:8000
+echo  Corporate Admin:   http://localhost:8001/admin/
+echo  Corporate User:    http://localhost:8001/user/
+echo  Corporate Docs:    http://localhost:8001/docs
+echo  Low-Side User:     http://localhost:8002/user/
+echo  Low-Side Docs:     http://localhost:8002/docs
 echo.
 echo  Default admin login: admin / admin123
 echo.

@@ -13,60 +13,119 @@
     <h2>Pending Messages ({{ pending_count }})</h2>
     <p class="text-muted mb-4">
         Messages that have been cert-wrapped but not yet sent to the gateway.
-        These were created with auto-send disabled.
+        Select messages and click <strong>Send Selected</strong> to release them.
     </p>
 
     {% if pending %}
-    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-        <thead>
-            <tr style="border-bottom: 2px solid #e5e7eb;">
-                <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Project</th>
-                <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Message ID</th>
-                <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">TestID</th>
-                <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Status</th>
-                <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Queued At</th>
-                <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Cert Expires</th>
-                <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for record in pending %}
-            {% set msg = record.message %}
-            {% set wrapped = record.wrapped %}
-            <tr style="border-bottom: 1px solid #f3f4f6;">
-                <td style="padding: 0.75rem;">
-                    <span style="background: #e0e7ff; color: #3730a3; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.85rem;">{{ msg.Project }}</span>
-                </td>
-                <td style="padding: 0.75rem; font-family: monospace; font-size: 0.8rem; color: #6b7280;">{{ msg.ID[:8] }}...</td>
-                <td style="padding: 0.75rem; font-weight: 500;">{{ msg.get("TestID", "") }}</td>
-                <td style="padding: 0.75rem;">{{ msg.get("Status", "") }}</td>
-                <td style="padding: 0.75rem; color: #6b7280; font-size: 0.85rem;">{{ record.created[:19] }}</td>
-                <td style="padding: 0.75rem; font-size: 0.85rem;">
-                    {% if wrapped and wrapped.expires_at %}
-                    <span style="color: #92400e;">{{ wrapped.expires_at[:19] }}</span>
-                    {% else %}
-                    <span style="color: #6b7280;">-</span>
-                    {% endif %}
-                </td>
-                <td style="padding: 0.75rem;">
-                    <div style="display: flex; gap: 0.5rem;">
-                        <form action="/user/pending/{{ msg.ID }}/send" method="post" style="display: inline;">
-                            <button type="submit" class="btn btn-success" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;">
-                                Send Now
+    <form id="bulkForm" action="/user/pending/bulk-send" method="post">
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: center;">
+            <button type="submit" class="btn btn-success" id="sendSelectedBtn" disabled
+                    style="padding: 0.5rem 1.25rem;">
+                Send Selected (<span id="selectedCount">0</span>)
+            </button>
+            <button type="button" class="btn btn-secondary" id="selectAllBtn"
+                    style="padding: 0.5rem 1rem;" onclick="toggleSelectAll()">
+                Select All
+            </button>
+            <button type="submit" formaction="/user/pending/bulk-discard" class="btn btn-secondary"
+                    id="discardSelectedBtn" disabled
+                    style="padding: 0.5rem 1rem; background: #ef4444; color: white;"
+                    onclick="return confirm('Discard all selected messages? This cannot be undone.')">
+                Discard Selected
+            </button>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+            <thead>
+                <tr style="border-bottom: 2px solid #e5e7eb;">
+                    <th style="padding: 0.75rem; width: 40px;">
+                        <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"
+                               style="transform: scale(1.2); cursor: pointer;">
+                    </th>
+                    <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Project</th>
+                    <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Message ID</th>
+                    <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">TestID</th>
+                    <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Status</th>
+                    <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Queued At</th>
+                    <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Cert Expires</th>
+                    <th style="padding: 0.75rem; text-align: left; color: #6b7280; font-size: 0.8rem; text-transform: uppercase;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in pending %}
+                {% set msg = record.message %}
+                {% set wrapped = record.wrapped %}
+                <tr style="border-bottom: 1px solid #f3f4f6;" id="row-{{ msg.ID }}">
+                    <td style="padding: 0.75rem;">
+                        <input type="checkbox" name="message_ids" value="{{ msg.ID }}"
+                               class="msg-checkbox" onchange="updateSelection()"
+                               style="transform: scale(1.2); cursor: pointer;">
+                    </td>
+                    <td style="padding: 0.75rem;">
+                        <span style="background: #e0e7ff; color: #3730a3; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.85rem;">{{ msg.Project }}</span>
+                    </td>
+                    <td style="padding: 0.75rem; font-family: monospace; font-size: 0.8rem; color: #6b7280;">{{ msg.ID[:8] }}...</td>
+                    <td style="padding: 0.75rem; font-weight: 500;">{{ msg.get("TestID", "") }}</td>
+                    <td style="padding: 0.75rem;">{{ msg.get("Status", "") }}</td>
+                    <td style="padding: 0.75rem; color: #6b7280; font-size: 0.85rem;">{{ record.created[:19] }}</td>
+                    <td style="padding: 0.75rem; font-size: 0.85rem;">
+                        {% if wrapped and wrapped.expires_at %}
+                        <span style="color: #92400e;">{{ wrapped.expires_at[:19] }}</span>
+                        {% else %}
+                        <span style="color: #6b7280;">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 0.75rem;">
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button type="submit" formaction="/user/pending/{{ msg.ID }}/send"
+                                    class="btn btn-success" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;">
+                                Send
                             </button>
-                        </form>
-                        <form action="/user/pending/{{ msg.ID }}/discard" method="post" style="display: inline;"
-                              onsubmit="return confirm('Discard this message? This cannot be undone.')">
-                            <button type="submit" class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.85rem; background: #ef4444; color: white;">
+                            <button type="submit" formaction="/user/pending/{{ msg.ID }}/discard"
+                                    class="btn btn-secondary"
+                                    style="padding: 0.35rem 0.75rem; font-size: 0.85rem; background: #ef4444; color: white;"
+                                    onclick="return confirm('Discard this message?')">
                                 Discard
                             </button>
-                        </form>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </form>
+
+    <script>
+    function updateSelection() {
+        var checkboxes = document.querySelectorAll('.msg-checkbox');
+        var checked = document.querySelectorAll('.msg-checkbox:checked');
+        var count = checked.length;
+
+        document.getElementById('selectedCount').textContent = count;
+        document.getElementById('sendSelectedBtn').disabled = count === 0;
+        document.getElementById('discardSelectedBtn').disabled = count === 0;
+
+        var selectAll = document.getElementById('selectAllCheckbox');
+        selectAll.checked = count === checkboxes.length && count > 0;
+        selectAll.indeterminate = count > 0 && count < checkboxes.length;
+
+        // Highlight selected rows
+        checkboxes.forEach(function(cb) {
+            var row = cb.closest('tr');
+            row.style.backgroundColor = cb.checked ? '#f0f9ff' : '';
+        });
+    }
+
+    function toggleSelectAll() {
+        var selectAll = document.getElementById('selectAllCheckbox');
+        var checkboxes = document.querySelectorAll('.msg-checkbox');
+        checkboxes.forEach(function(cb) {
+            cb.checked = selectAll.checked;
+        });
+        updateSelection();
+    }
+    </script>
+
     {% else %}
     <p class="text-muted">
         No pending messages. When you send a message with auto-send unchecked, it will appear here.
