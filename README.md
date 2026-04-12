@@ -171,22 +171,116 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
 ## Configuration
 
+There are three ways to set addresses and paths, in priority order (highest wins):
+
+1. **Environment variables** (recommended for deployment)
+2. **`config.json` file** in the service directory (recommended for persistent config)
+3. **Defaults** baked into `config.py` (development only)
+
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATA_DIR` | `./data` | Base directory for file storage |
-| `GATEWAY_URL` | `http://localhost:8080` | DMZ Gateway base URL |
-| `WHITELIST_FILE_PATH` | `./data/whitelist.json` | Whitelist JSON file path (corporate only) |
+| Variable | Used by | Default | Description |
+|----------|---------|---------|-------------|
+| `GATEWAY_URL` | corporate, low-side | `http://localhost:8000` | DMZ Gateway base URL |
+| `CERT_GATEWAY_URL` | corporate only | `https://cert-gateway.example.com` | Certificate gateway for JWT wrapping |
+| `MASTER_DIR` | corporate, low-side | `./data/messages` | Directory for stored messages |
+| `TMP_DIR` | corporate, low-side | `./data/tmp` | Temp directory for atomic writes |
+| `ERROR_DIR` | corporate, low-side | `./data/errors` | Directory for error records |
+| `KEYS_DIR` | corporate only | `./data/keys` | Directory for generated key pairs |
+| `PENDING_DIR` | corporate only | `./data/pending` | Directory for pending messages (auto-send off) |
+| `WHITELIST_FILE_PATH` | corporate only | `./data/whitelist.json` | Project whitelist JSON file |
+| `USERS_FILE_PATH` | corporate, low-side | `./data/users.json` | User accounts JSON file |
+| `ADMIN_PASSWORD` | corporate only | `admin123` | Initial admin password |
+| `LOW_SIDE_URL` | mock gateway | `http://localhost:8002` | Where mock gateway forwards to low-side |
+| `CORPORATE_URL` | mock gateway | `http://localhost:8001` | Where mock gateway forwards to corporate |
 
-### Example
+### Setting Environment Variables
+
+**Windows (cmd):**
+```cmd
+set GATEWAY_URL=https://gateway.prod.example.com
+set CERT_GATEWAY_URL=https://cert-gateway.prod.example.com:8443
+python -m uvicorn app.main:app --port 8001
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:GATEWAY_URL="https://gateway.prod.example.com"
+$env:CERT_GATEWAY_URL="https://cert-gateway.prod.example.com:8443"
+python -m uvicorn app.main:app --port 8001
+```
+
+**Linux/Mac:**
+```bash
+export GATEWAY_URL=https://gateway.prod.example.com
+export CERT_GATEWAY_URL=https://cert-gateway.prod.example.com:8443
+python -m uvicorn app.main:app --port 8001
+```
+
+### Using `config.json`
+
+Create `corporate/config.json`:
+```json
+{
+  "GATEWAY_URL": "https://gateway.prod.example.com",
+  "CERT_GATEWAY_URL": "https://cert-gateway.prod.example.com:8443",
+  "MASTER_DIR": "/var/data/corporate/messages",
+  "ERROR_DIR": "/var/data/corporate/errors"
+}
+```
+
+Create `low_side/config.json`:
+```json
+{
+  "GATEWAY_URL": "https://gateway.prod.example.com",
+  "MASTER_DIR": "/var/data/lowside/messages"
+}
+```
+
+### Updating Defaults (development only)
+
+- Corporate cert + gateway: `corporate/app/config.py` (`DEFAULTS` dict)
+- Low-side gateway: `low_side/app/config.py` (`DEFAULTS` dict)
+
+### Listener Address / Port
+
+The service's own bind address is set on the `uvicorn` command line, **not** in config:
 
 ```bash
-export DATA_DIR=/var/data/dmz
-export GATEWAY_URL=https://gateway.dmz.example.com
-export WHITELIST_FILE_PATH=/var/data/whitelist.json
+# Listen on all interfaces, port 8001
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+# Listen on a specific IP
+python -m uvicorn app.main:app --host 10.0.1.25 --port 8001
+
+# Loopback only (default)
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
+
+### Verifying the Config Took Effect
+
+After starting a service, check the startup logs — the resolved URLs are printed:
+
+```
+INFO - Message store: /var/data/corporate/messages
+INFO - Gateway URL: https://dmz-gateway.internal.yourorg.com
+INFO - Whitelist file: /var/data/corporate/whitelist.json
+```
+
+### Restarting After Changes
+
+Most config changes require a **restart** of the service. The one exception is the **project whitelist** (`whitelist.json`) which auto-reloads when the file's mtime changes — no restart needed for whitelist edits.
+
+### Message Flow with Cert Gateway
+
+When the corporate service sends a message:
+
+```
+1. User submits message → corporate /user/send
+2. Corporate POSTs to {CERT_GATEWAY_URL}/wrap
+3. Cert gateway returns { token, expires_at, message }
+4. If auto-send: corporate POSTs wrapped payload to {GATEWAY_URL}/messages
+   If auto-send off: wrapped payload saved to {PENDING_DIR} for manual release
 ```
 
 ## File Storage
