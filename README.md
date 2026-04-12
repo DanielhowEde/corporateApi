@@ -828,3 +828,105 @@ SonarQube (preferred Example)
 - Never store secrets in git
 - Use GitLab CI variables or secret managers
 - Mask and protect sensitive varables
+
+# Updating Service Addresses
+There are three ways to set addresses, in priority order (highest wins):
+
+Option 1: Environment variables (recommended for deployment)
+Set these before starting the service:
+
+Windows (cmd):
+
+
+set GATEWAY_URL=https://gateway.prod.example.com
+set CERT_GATEWAY_URL=https://cert-gateway.prod.example.com:8443
+python -m uvicorn app.main:app --port 8001
+Windows (PowerShell):
+
+
+$env:GATEWAY_URL="https://gateway.prod.example.com"
+$env:CERT_GATEWAY_URL="https://cert-gateway.prod.example.com:8443"
+python -m uvicorn app.main:app --port 8001
+Linux/Mac:
+
+
+export GATEWAY_URL=https://gateway.prod.example.com
+export CERT_GATEWAY_URL=https://cert-gateway.prod.example.com:8443
+python -m uvicorn app.main:app --port 8001
+Option 2: config.json (recommended for persistent config)
+Create corporate/config.json:
+
+
+{
+  "GATEWAY_URL": "https://gateway.prod.example.com",
+  "CERT_GATEWAY_URL": "https://cert-gateway.prod.example.com:8443",
+  "MASTER_DIR": "/var/data/corporate/messages",
+  "ERROR_DIR": "/var/data/corporate/errors"
+}
+Create low_side/config.json:
+
+
+{
+  "GATEWAY_URL": "https://gateway.prod.example.com",
+  "MASTER_DIR": "/var/data/lowside/messages"
+}
+Option 3: Edit defaults in config.py (development only)
+Corporate cert + gateway: corporate/app/config.py lines 42, 45
+Low-side gateway: low_side/app/config.py line 37
+What each variable means
+Variable	Used by	Description	Current default
+GATEWAY_URL	corporate, low-side	DMZ Gateway base URL	http://localhost:8000
+CERT_GATEWAY_URL	corporate only	Certificate gateway for JWT wrapping	https://cert-gateway.example.com
+LOW_SIDE_URL	mock gateway	Where mock gateway forwards to low-side	http://localhost:8002
+CORPORATE_URL	mock gateway	Where mock gateway forwards to corporate	http://localhost:8001
+Updating for a real estate
+For the corporate side talking to your real cert gateway:
+
+
+// corporate/config.json
+{
+  "GATEWAY_URL": "https://dmz-gateway.internal.yourorg.com",
+  "CERT_GATEWAY_URL": "https://cert-wrapper.internal.yourorg.com/api/v1"
+}
+The corporate service will POST to {CERT_GATEWAY_URL}/wrap for JWT wrapping, then POST the wrapped payload to {GATEWAY_URL}/messages.
+
+Listener address/port
+The service's own listener (what IP/port it binds to) is set on the uvicorn command line, not in config:
+
+
+## Listen on all interfaces, port 8001
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
+
+## Listen on specific IP
+python -m uvicorn app.main:app --host 10.0.1.25 --port 8001
+
+## Loopback only (default)
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+Verifying the config took effect
+After starting a service, check the startup logs — both services log the resolved URLs:
+
+
+INFO - Message store: /var/data/corporate/messages
+INFO - Gateway URL: https://dmz-gateway.internal.yourorg.com
+INFO - Whitelist file: /var/data/corporate/whitelist.json
+Restarting
+Config changes require a restart of the service. The one exception is the whitelist (whitelist.json) which auto-reloads when the file's mtime changes — no restart needed for whitelist edits.
+
+add these too README.md
+Grep "^## Configuration" (in h:\repos\API-DMZ-API\README.md)
+1 line of output
+Read h:\repos\API-DMZ-API\README.md (lines 171-195)
+I'll replace the existing stale Configuration section with the comprehensive instructions:
+
+Edit h:\repos\API-DMZ-API\README.md
+Added 94 lines
+Added. The README's Configuration section now has complete instructions covering:
+
+Three config methods (env vars, config.json, defaults) with priority order
+Full env var table including GATEWAY_URL, CERT_GATEWAY_URL, MASTER_DIR, ERROR_DIR, KEYS_DIR, PENDING_DIR, etc.
+Per-OS examples (Windows cmd, PowerShell, Linux/Mac)
+config.json examples for both corporate and low-side
+Listener address/port explanation (uvicorn CLI flags)
+Verification — how to confirm the config took effect via startup logs
+Restart requirements — noting that whitelist auto-reloads but everything else needs a restart
+Message flow diagram showing where each URL is used
