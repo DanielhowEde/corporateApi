@@ -681,16 +681,156 @@ cd mock_gateway && python -m uvicorn main:app    --port 8000 --reload &
 
 5. **Start services** via systemd, supervisor, or your preferred process manager.
 
-## Key Management (Admin)
+## Key Management & mTLS Client Certificates (Admin)
 
-The admin panel includes a **Keys** page (`/admin/keys`) for generating and managing RSA key pairs.
+The admin **Keys** page (`/admin/keys`) generates RSA key pairs **and** issues a signed client certificate for each one. The app acts as its own Certificate Authority — every client cert is signed by the app's internal CA, which is created automatically the first time you generate a key.
 
-- **Generate**: Create RSA 2048-bit or 4096-bit key pairs (requires `cryptography` package)
-- **View Public Key**: Copy the PEM public key to share with the cert gateway or partners
-- **Revoke**: Mark a key as revoked (does not delete files)
-- **Delete**: Permanently remove a key pair
+### Files per key pair
 
-Keys are stored in `./data/keys/{key_id}/` with `private.pem`, `public.pem`, and `metadata.json`.
+Stored in `./data/keys/{key_id}/`:
+
+| File | Purpose |
+|------|---------|
+| `private.pem` | Client private key (**keep secret**) |
+| `public.pem` | Client public key |
+| `client.crt` | X.509 client certificate signed by the app's CA |
+| `client.pfx` | PKCS#12 bundle (cert + key + CA chain), password `changeme` |
+| `metadata.json` | Name, size, created/expiry dates, status |
+
+The CA lives in `./data/keys/_ca/` (`ca.key` + `ca.crt`) — generated on first use and reused for all subsequent client certs.
+
+### Workflow
+
+1. Log in as admin → **Keys** tab (`/admin/keys`)
+2. Click **Download CA Certificate (ca.crt)** — this is what the server will trust
+3. Click **Generate Key** with a name (e.g. `postman-dev`, `script-runner`)
+4. Download files via the buttons on each row:
+   - **cert** → `client.crt`
+   - **key** → `private.pem`
+   - **pfx** → `client.pfx` (for Postman/browsers)
+5. Use these when calling the API (see below)
+
+### Running the API with mTLS
+
+Start uvicorn with TLS and client cert verification:
+
+```bash
+cd corporate
+python -m uvicorn app.main:app \
+  --host 0.0.0.0 --port 8443 \
+  --ssl-keyfile ./data/server/server.key \
+  --ssl-certfile ./data/server/server.crt \
+  --ssl-ca-certs ./data/keys/_ca/ca.crt \
+  --ssl-cert-reqs 2
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--ssl-keyfile` / `--ssl-certfile` | Server's own cert (generate separately, or use your existing PKI) |
+| `--ssl-ca-certs` | Trust anchor — accepts any client cert signed by this CA |
+| `--ssl-cert-reqs 2` | Require a valid client cert (`CERT_REQUIRED`). Use `1` for optional, `0` for none |
+
+Once started, the API is reachable at `https://localhost:8443` **only** with a valid client cert.
+
+> **Note**: You still need a server cert/key. If you don't have one, run `certs/generate_certs.ps1` or `certs/generate_certs.sh` (included in this repo) to produce a `server.crt`/`server.key` signed by a local CA. For production, use your corporate PKI or Let's Encrypt for the server cert.
+
+### Making API Calls with Your Client Cert
+
+#### curl
+```bash
+curl --cert client.crt --key private.pem --cacert ca.crt \
+     https://localhost:8443/health
+```
+
+Post a message:
+```bash
+curl --cert client.crt --key private.pem --cacert ca.crt \
+     -X POST https://localhost:8443/messages \
+     -H "Content-Type: application/json" \
+     -d '{
+       "ID": "550e8400-e29b-41d4-a716-446655440000",
+       "Project": "AAA",
+       "TestID": "TST001",
+       "Area": "Integration",
+       "Date": "2026-01-30T11:22:33",
+       "Status": "Inprogress",
+       "Data": {"result": "pass"}
+     }'
+```
+
+#### Python (httpx)
+```python
+import httpx
+
+client = httpx.Client(
+    cert=("client.crt", "private.pem"),
+    verify="ca.crt",
+)
+r = client.get("https://localhost:8443/health")
+print(r.status_code, r.json())
+```
+
+#### Python (requests)
+```python
+import requests
+
+r = requests.get(
+    "https://localhost:8443/health",
+    cert=("client.crt", "private.pem"),
+    verify="ca.crt",
+)
+print(r.status_code, r.json())
+```
+
+#### PowerShell (Invoke-RestMethod)
+```powershell
+# Requires PowerShell 7+
+$cert = Get-PfxCertificate -FilePath client.pfx
+Invoke-RestMethod -Uri https://localhost:8443/health -Certificate $cert
+```
+
+#### Postman
+1. **Settings → Certificates → Add Certificate**
+2. Host: `localhost:8443`
+3. CRT file: `client.crt`
+4. KEY file: `private.pem`
+5. (Optional) **CA Certificates** — load `ca.crt` so Postman trusts the server
+6. Send requests normally — Postman attaches the client cert automatically
+
+Alternative: use the PFX bundle directly. Postman also accepts `.pfx` with the password (default `changeme`).
+
+#### Browser
+Import `client.pfx` (password `changeme`) into your OS/browser cert store:
+- **Windows**: double-click the `.pfx` → follow import wizard → "Personal" store
+- **Mac**: double-click → Keychain Access → System or Login keychain
+- **Firefox**: Settings → Privacy & Security → Certificates → View Certificates → Your Certificates → Import
+
+The browser will prompt you to pick a cert when connecting to `https://localhost:8443`.
+
+### Verifying mTLS is Enforced
+
+Without a client cert, the TLS handshake fails:
+
+```bash
+curl --cacert ca.crt https://localhost:8443/health
+# curl: (35) error:0A000410:SSL routines::sslv3 alert handshake failure
+```
+
+That's the server rejecting you — exactly what you want.
+
+### Admin Actions
+
+- **View Public Key** — displays the PEM public key on screen (safe to share)
+- **Revoke** — marks the key as revoked in metadata. Note: revoked certs are **not** yet enforced by the server; you'd need to distribute a CRL or switch to OCSP for true revocation
+- **Delete** — permanently removes the key pair directory
+
+### Security Notes
+
+- **Never commit `private.pem` or `.pfx` files** — treat them like passwords
+- **Rotate certs** — default validity is 365 days. Generate a new pair and delete the old one
+- **CA private key** (`./data/keys/_ca/ca.key`) — anyone with this can mint valid client certs. Back it up securely, restrict filesystem access to the service account
+- **PFX password** (`changeme`) — change `DEFAULT_PFX_PASSWORD` in `key_manager.py` before using in anger
+- **Production** — consider using a real enterprise CA rather than the app's self-signed CA. The app can still issue keys, but you'd sign them with your corporate CA instead
 
 ## Message History (User Portal)
 

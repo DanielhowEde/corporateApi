@@ -1,0 +1,8 @@
+# Never commit private keys or generated certs
+*.key
+*.crt
+*.pfx
+*.srl
+*.pem
+*.csr
+*.ext

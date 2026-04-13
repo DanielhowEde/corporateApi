@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_schema_validation.py::TestMessageModel::test_valid_message_passes_validation -v --tb=long)",
+      "Bash(python -m pytest tests/ --tb=short)",
+      "Bash(python -m pytest tests/)"
+    ]
+  }
+}

@@ -19,42 +19,58 @@ def valid_message():
         "TestID": "AAA-1112",
         "Area": "Test Area",
         "Status": "Inprogress",
-        "Date": "30012026T11:22:33",
+        "Date": "2026-01-30T11:22:33",
         "Data": {"random": "A", "name": "john smith"},
     }
+
+
+@pytest.fixture
+def temp_dirs(tmp_path):
+    """Create temp directories for master, tmp, error."""
+    master_dir = tmp_path / "messages"
+    tmp_dir = tmp_path / "tmp"
+    error_dir = tmp_path / "errors"
+    return master_dir, tmp_dir, error_dir
 
 
 class TestFileStore:
     """Tests for FileStore class on corporate side."""
 
-    def test_file_store_creates_directories(self, temp_data_dir):
+    def test_file_store_creates_directories(self, temp_dirs):
         """Test that FileStore creates required directories."""
-        store = FileStore(data_dir=str(temp_data_dir))
+        master_dir, tmp_dir, error_dir = temp_dirs
+        FileStore(
+            master_dir=str(master_dir),
+            tmp_dir=str(tmp_dir),
+            error_dir=str(error_dir),
+        )
+        assert master_dir.exists()
+        assert tmp_dir.exists()
+        assert error_dir.exists()
 
-        assert (temp_data_dir / "tmp").exists()
-        assert (temp_data_dir / "incoming").exists()
-
-    def test_write_message_creates_correct_path(self, temp_data_dir, valid_message):
-        """Test that message is written to correct date-based path."""
-        store = FileStore(data_dir=str(temp_data_dir))
+    def test_write_message_creates_correct_path(self, temp_dirs, valid_message):
+        """Test that message is written to project-based path."""
+        master_dir, tmp_dir, error_dir = temp_dirs
+        store = FileStore(
+            master_dir=str(master_dir),
+            tmp_dir=str(tmp_dir),
+            error_dir=str(error_dir),
+        )
 
         result_path = store.write_message(valid_message)
 
-        # Date is 30012026 -> 2026/01/30
-        expected_path = (
-            temp_data_dir
-            / "incoming"
-            / "2026"
-            / "01"
-            / "30"
-            / f"{valid_message['ID']}.json"
-        )
+        expected_path = master_dir / "AAA" / f"{valid_message['ID']}.json"
         assert result_path == expected_path
         assert result_path.exists()
 
-    def test_write_message_content_is_correct(self, temp_data_dir, valid_message):
+    def test_write_message_content_is_correct(self, temp_dirs, valid_message):
         """Test that written message content matches input."""
-        store = FileStore(data_dir=str(temp_data_dir))
+        master_dir, tmp_dir, error_dir = temp_dirs
+        store = FileStore(
+            master_dir=str(master_dir),
+            tmp_dir=str(tmp_dir),
+            error_dir=str(error_dir),
+        )
 
         result_path = store.write_message(valid_message)
 
@@ -68,40 +84,38 @@ class TestReceiveEndpointWithWhitelist:
     """Integration tests for /dmz/messages with whitelist."""
 
     @pytest.fixture
-    def configured_client(self, tmp_path, monkeypatch):
+    def configured_client(self, tmp_path):
         """Create a test client with configured whitelist and file store."""
-        data_dir = tmp_path / "data"
-        db_path = tmp_path / "whitelist.db"
-
-        monkeypatch.setenv("DATA_DIR", str(data_dir))
-        monkeypatch.setenv("WHITELIST_DB_PATH", str(db_path))
+        master_dir = tmp_path / "messages"
+        tmp_dir = tmp_path / "tmp"
+        error_dir = tmp_path / "errors"
+        whitelist_path = tmp_path / "whitelist.json"
 
         from app import main
         from app.whitelist import ProjectWhitelist
         from app.file_store import FileStore
 
-        main.whitelist = ProjectWhitelist(db_path=str(db_path))
-        main.file_store = FileStore(data_dir=str(data_dir))
-
-        # Add test project to whitelist
+        main.whitelist = ProjectWhitelist(file_path=str(whitelist_path))
+        main.file_store = FileStore(
+            master_dir=str(master_dir),
+            tmp_dir=str(tmp_dir),
+            error_dir=str(error_dir),
+        )
         main.whitelist.add_project("AAA")
 
-        return TestClient(main.app), data_dir
+        return TestClient(main.app), master_dir
 
     def test_receive_writes_file_when_whitelisted(
         self, configured_client, valid_message
     ):
         """Test that receiving a message writes it to disk when whitelisted."""
-        client, data_dir = configured_client
+        client, master_dir = configured_client
 
         response = client.post("/dmz/messages", json=valid_message)
 
         assert response.status_code == 200
 
-        # Verify file was written
-        expected_path = (
-            data_dir / "incoming" / "2026" / "01" / "30" / f"{valid_message['ID']}.json"
-        )
+        expected_path = master_dir / "AAA" / f"{valid_message['ID']}.json"
         assert expected_path.exists()
 
         with open(expected_path) as f:
@@ -112,10 +126,11 @@ class TestReceiveEndpointWithWhitelist:
         self, configured_client, valid_message, mocker
     ):
         """Test that disk write errors return 500 with generic error."""
-        client, data_dir = configured_client
+        client, _ = configured_client
 
         mocker.patch(
-            "app.main.file_store.write_message", side_effect=FileStoreError("Disk full")
+            "app.main.file_store.write_message",
+            side_effect=FileStoreError("Disk full"),
         )
 
         response = client.post("/dmz/messages", json=valid_message)
@@ -124,5 +139,4 @@ class TestReceiveEndpointWithWhitelist:
         data = response.json()
         assert data["success"] is False
         assert data["error"] == "Invalid request"
-        # Should NOT leak disk error details
         assert "disk" not in data["error"].lower()

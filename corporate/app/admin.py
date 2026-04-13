@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .config import config
@@ -639,8 +639,26 @@ async def admin_generate_key(
     try:
         metadata = key_manager.generate_key_pair(name, key_size)
         logger.info(f"Admin generated key: {metadata['key_id']}, name={name}")
+
+        # Best-effort sync to low-side via the gateway
+        if gateway_client:
+            ca_pem = key_manager.get_ca_cert_pem()
+            if ca_pem:
+                await gateway_client.sync_ca(ca_pem)
+
+            cert_path = key_manager.get_file(metadata["key_id"], "client.crt")
+            if cert_path:
+                await gateway_client.sync_client_cert(
+                    {
+                        "key_id": metadata["key_id"],
+                        "name": name,
+                        "cert_pem": cert_path.read_text(encoding="utf-8"),
+                        "action": "upsert",
+                    }
+                )
+
         return RedirectResponse(
-            url=f"/admin/keys?message=Key+pair+generated+successfully:+{name}",
+            url=f"/admin/keys?message=Key+pair+generated+and+synced+to+low-side:+{name}",
             status_code=status.HTTP_303_SEE_OTHER,
         )
     except KeyManagerError as e:
@@ -687,6 +705,134 @@ async def admin_view_public_key(
     )
 
 
+@router.post("/keys/sync-ca", name="admin_sync_ca")
+async def admin_sync_ca(admin_session: Optional[str] = Cookie(None)):
+    """Manually push the CA cert to low-side via the gateway."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    ca_pem = key_manager.get_ca_cert_pem()
+    if not ca_pem:
+        return RedirectResponse(
+            url="/admin/keys?error=CA+not+yet+created",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    if gateway_client:
+        await gateway_client.sync_ca(ca_pem)
+        logger.info("Admin manually synced CA to low-side")
+        return RedirectResponse(
+            url="/admin/keys?message=CA+sync+sent+to+gateway",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    return RedirectResponse(
+        url="/admin/keys?error=Gateway+client+not+configured",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/keys/{key_id}/sync", name="admin_sync_client_cert")
+async def admin_sync_client_cert(
+    key_id: str, admin_session: Optional[str] = Cookie(None)
+):
+    """Manually push a client cert to low-side via the gateway."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    metadata = key_manager.get_key(key_id)
+    cert_path = key_manager.get_file(key_id, "client.crt")
+    if not metadata or not cert_path:
+        return RedirectResponse(
+            url="/admin/keys?error=Key+not+found",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    if gateway_client:
+        await gateway_client.sync_client_cert(
+            {
+                "key_id": key_id,
+                "name": metadata.get("name", ""),
+                "cert_pem": cert_path.read_text(encoding="utf-8"),
+                "action": "upsert",
+            }
+        )
+        logger.info(f"Admin manually synced client cert: {key_id}")
+        return RedirectResponse(
+            url=f"/admin/keys?message=Cert+sync+sent+for+{metadata.get('name', key_id)}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    return RedirectResponse(
+        url="/admin/keys?error=Gateway+client+not+configured",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.get("/keys/ca.crt", name="admin_download_ca")
+async def admin_download_ca(admin_session: Optional[str] = Cookie(None)):
+    """Download the CA certificate (public, safe to distribute)."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    ca_pem = key_manager.get_ca_cert_pem()
+    if not ca_pem:
+        return PlainTextResponse("CA not yet created", status_code=404)
+
+    return PlainTextResponse(
+        ca_pem,
+        media_type="application/x-pem-file",
+        headers={"Content-Disposition": 'attachment; filename="ca.crt"'},
+    )
+
+
+@router.get("/keys/{key_id}/download/{filename}", name="admin_download_key_file")
+async def admin_download_key_file(
+    key_id: str, filename: str, admin_session: Optional[str] = Cookie(None)
+):
+    """
+    Download a file belonging to a key pair.
+
+    Allowed filenames:
+      - private.pem  (private key, keep secret)
+      - public.pem   (public key)
+      - client.crt   (signed client certificate)
+      - client.pfx   (PKCS#12 bundle for Postman/browsers)
+    """
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    file_path = key_manager.get_file(key_id, filename)
+    if not file_path:
+        return PlainTextResponse("File not found", status_code=404)
+
+    metadata = key_manager.get_key(key_id) or {}
+    safe_name = metadata.get("name", key_id).replace(" ", "_")
+    download_name = f"{safe_name}-{filename}"
+
+    media_types = {
+        "private.pem": "application/x-pem-file",
+        "public.pem": "application/x-pem-file",
+        "client.crt": "application/x-pem-file",
+        "client.pfx": "application/x-pkcs12",
+    }
+
+    logger.info(f"Admin downloaded {filename} for key {key_id}")
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_types.get(filename, "application/octet-stream"),
+        filename=download_name,
+    )
+
+
 @router.post("/keys/{key_id}/revoke", name="admin_revoke_key")
 async def admin_revoke_key(key_id: str, admin_session: Optional[str] = Cookie(None)):
     """Revoke a key pair."""
@@ -695,10 +841,23 @@ async def admin_revoke_key(key_id: str, admin_session: Optional[str] = Cookie(No
             url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
+    metadata = key_manager.get_key(key_id)
     if key_manager.revoke_key(key_id):
         logger.info(f"Admin revoked key: {key_id}")
+
+        # Sync revocation to low-side (best-effort)
+        if gateway_client and metadata:
+            await gateway_client.sync_client_cert(
+                {
+                    "key_id": key_id,
+                    "name": metadata.get("name", ""),
+                    "cert_pem": "",
+                    "action": "revoke",
+                }
+            )
+
         return RedirectResponse(
-            url="/admin/keys?message=Key+revoked+successfully",
+            url="/admin/keys?message=Key+revoked+and+synced+to+low-side",
             status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
@@ -714,10 +873,23 @@ async def admin_delete_key(key_id: str, admin_session: Optional[str] = Cookie(No
             url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
         )
 
+    metadata = key_manager.get_key(key_id)
     if key_manager.delete_key(key_id):
         logger.info(f"Admin deleted key: {key_id}")
+
+        # Sync deletion to low-side (best-effort)
+        if gateway_client and metadata:
+            await gateway_client.sync_client_cert(
+                {
+                    "key_id": key_id,
+                    "name": metadata.get("name", ""),
+                    "cert_pem": "",
+                    "action": "delete",
+                }
+            )
+
         return RedirectResponse(
-            url="/admin/keys?message=Key+deleted+permanently",
+            url="/admin/keys?message=Key+deleted+and+low-side+notified",
             status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(

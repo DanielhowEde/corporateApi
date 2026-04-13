@@ -69,6 +69,57 @@ class GatewayClient:
             await self._client.aclose()
             self._client = None
 
+    async def sync_ca(self, ca_pem: str) -> None:
+        """
+        Send the corporate CA certificate to low-side via gateway (best-effort).
+
+        Low-side stores this and uses it as the trust root for incoming mTLS
+        connections — so client certs issued by corporate are also accepted
+        by low-side.
+
+        Args:
+            ca_pem: CA certificate in PEM format
+        """
+        payload = {"ca_pem": ca_pem}
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                "/ca", json=payload, headers={"X-Request-ID": get_request_id()}
+            )
+            if response.status_code < 300:
+                logger.info("CA cert synced to gateway")
+            else:
+                logger.warning(f"Gateway returned {response.status_code} for CA sync")
+        except Exception as e:
+            logger.warning(f"CA sync to gateway failed (non-fatal): {e}")
+
+    async def sync_client_cert(self, cert_data: Dict[str, Any]) -> None:
+        """
+        Send an issued client cert's public info to low-side (best-effort).
+
+        Only the public certificate PEM and metadata are sent — never the
+        private key. Low-side stores this as an audit/allowlist record.
+
+        Args:
+            cert_data: Dict with key_id, name, cert_pem, action (upsert|revoke|delete)
+        """
+        key_id = cert_data.get("key_id", "unknown")
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                "/client-certs",
+                json=cert_data,
+                headers={"X-Request-ID": get_request_id()},
+            )
+            if response.status_code < 300:
+                logger.info(f"Client cert synced to gateway: key_id={key_id}")
+            else:
+                logger.warning(
+                    f"Gateway returned {response.status_code} for cert sync: {key_id}"
+                )
+        except Exception as e:
+            logger.warning(f"Client cert sync to gateway failed (non-fatal): {e}")
+
     async def sync_user(self, user_data: Dict[str, Any]) -> None:
         """
         Send a user sync event to the DMZ Gateway (best-effort, no retry).

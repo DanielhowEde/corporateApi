@@ -143,6 +143,67 @@ async def sync_user(request: Request):
         )
 
 
+@app.post("/ca")
+async def sync_ca(request: Request):
+    """Forward a CA certificate sync from corporate to low-side."""
+    try:
+        body = await request.json()
+        print(f"[GATEWAY] CA sync: {len(body.get('ca_pem', ''))} bytes")
+
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(f"{LOW_SIDE_URL}/dmz/ca", json=body)
+            if response.status_code < 300:
+                print("[GATEWAY] CA cert forwarded to low-side")
+            else:
+                print(f"[GATEWAY] Low-side rejected CA: {response.status_code}")
+        except Exception as forward_err:
+            print(f"[GATEWAY] Could not forward CA to low-side: {forward_err}")
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK, content={"status": "accepted"}
+        )
+    except Exception as e:
+        print(f"[GATEWAY] CA sync error: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
+        )
+
+
+@app.post("/client-certs")
+async def sync_client_cert(request: Request):
+    """Forward a client cert sync from corporate to low-side."""
+    try:
+        body = await request.json()
+        key_id = body.get("key_id", "unknown")
+        action = body.get("action", "upsert")
+        print(f"[GATEWAY] Client cert sync: key_id={key_id}, action={action}")
+
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(
+                    f"{LOW_SIDE_URL}/dmz/client-certs", json=body
+                )
+            if response.status_code < 300:
+                print(f"[GATEWAY] Client cert forwarded to low-side: {key_id}")
+            else:
+                print(
+                    f"[GATEWAY] Low-side rejected client cert: {response.status_code}"
+                )
+        except Exception as forward_err:
+            print(f"[GATEWAY] Could not forward client cert to low-side: {forward_err}")
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "accepted", "key_id": key_id},
+        )
+    except Exception as e:
+        print(f"[GATEWAY] Client cert sync error: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
 

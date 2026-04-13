@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
+from .cert_store import CertStore, CertStoreError
 from .file_store import FileStore, FileStoreError
 from .gateway_client import GatewayClient, GatewayError, GatewayUnavailableError
 from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
@@ -33,12 +34,13 @@ logger = setup_logging("low_side_api")
 # Global instances (initialized in lifespan)
 file_store: FileStore
 gateway_client: GatewayClient
+cert_store: CertStore
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown."""
-    global file_store, gateway_client
+    global file_store, gateway_client, cert_store
 
     # Startup
     logger.info("Starting LOW-SIDE DMZ API")
@@ -46,12 +48,14 @@ async def lifespan(app: FastAPI):
     # Initialize components (they use config.py for paths)
     file_store = FileStore()
     gateway_client = GatewayClient()
+    cert_store = CertStore()
 
     # Set dependencies for user portal
     user.set_gateway_client(gateway_client)
 
     logger.info(f"Message store: {file_store.master_dir}")
     logger.info(f"Gateway URL: {gateway_client.base_url}")
+    logger.info(f"Cert store: {cert_store.keys_dir}")
 
     yield
 
@@ -354,3 +358,82 @@ async def receive_user_sync(request: Request):
             status_code=status.HTTP_200_OK, content={"status": "ok", "message": msg}
         )
     return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": msg})
+
+
+@app.post("/dmz/ca", tags=["DMZ"])
+async def receive_ca_sync(request: Request):
+    """
+    Receive the corporate CA certificate via the gateway.
+
+    Saves the PEM to the local cert store so this service can trust client
+    certificates issued by corporate's internal CA for mTLS.
+
+    **Security:**
+    - Only accepts requests from Gateway (enforced by proxy)
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Invalid JSON"}
+        )
+
+    ca_pem = body.get("ca_pem", "")
+    if not ca_pem or "BEGIN CERTIFICATE" not in ca_pem:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "Missing or invalid ca_pem"},
+        )
+
+    try:
+        cert_store.save_ca(ca_pem)
+        logger.info("CA cert synced from corporate")
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "ok", "path": str(cert_store.ca_path)},
+        )
+    except CertStoreError as e:
+        logger.error(f"Failed to save CA: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": "Failed to save CA"},
+        )
+
+
+@app.post("/dmz/client-certs", tags=["DMZ"])
+async def receive_client_cert_sync(request: Request):
+    """
+    Receive an issued client certificate (public info only) via the gateway.
+
+    Corporate forwards each newly-issued client cert here so low-side has a
+    record of which clients should be permitted. Only the public certificate
+    PEM is transmitted — the private key never leaves corporate.
+
+    **Security:**
+    - Only accepts requests from Gateway (enforced by proxy)
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Invalid JSON"}
+        )
+
+    if not body.get("key_id"):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "key_id required"},
+        )
+
+    try:
+        cert_store.save_client_cert(body)
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "ok", "key_id": body["key_id"]},
+        )
+    except CertStoreError as e:
+        logger.error(f"Failed to save client cert: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": "Failed to save client cert"},
+        )
