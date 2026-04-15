@@ -54,22 +54,36 @@ async def _handle_message(request: Request):
     """Common handler for /message and /messages endpoints."""
     try:
         body = await request.json()
-        message_id = body.get("ID", "unknown")
-        project = body.get("Project", "UNK")
+
+        # If the payload is a JWT-wrapped envelope from the cert gateway
+        # ({token, expires_at, message}), unwrap it so downstream receivers
+        # see the raw Message schema. In production the gateway would also
+        # verify the JWT signature and expiry here.
+        if isinstance(body, dict) and "token" in body and "message" in body:
+            print(
+                f"[GATEWAY] Unwrapping JWT envelope "
+                f"(expires_at={body.get('expires_at')})"
+            )
+            inner = body["message"]
+        else:
+            inner = body
+
+        message_id = inner.get("ID", "unknown")
+        project = inner.get("Project", "UNK")
 
         print(f"[GATEWAY] Received message: ID={message_id}, Project={project}")
-        print(f"[GATEWAY] Full payload: {json.dumps(body, indent=2)}")
+        print(f"[GATEWAY] Payload: {json.dumps(inner, indent=2)}")
 
-        # Save locally for inspection
+        # Save locally for inspection (save the unwrapped form)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = RECEIVED_DIR / f"{timestamp}_{project}_{message_id[:8]}.json"
         with open(filename, "w") as f:
-            json.dump(body, f, indent=2)
+            json.dump(inner, f, indent=2)
         print(f"[GATEWAY] Saved to: {filename}")
 
-        # Forward to both sides so each stores the message
-        await _forward_message(f"{LOW_SIDE_URL}/dmz/messages", body, "low-side")
-        await _forward_message(f"{CORPORATE_URL}/dmz/messages", body, "corporate")
+        # Forward the unwrapped message to both sides
+        await _forward_message(f"{LOW_SIDE_URL}/dmz/messages", inner, "low-side")
+        await _forward_message(f"{CORPORATE_URL}/dmz/messages", inner, "corporate")
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
