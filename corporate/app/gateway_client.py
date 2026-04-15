@@ -354,6 +354,9 @@ class GatewayClient:
                 if attempt < self.MAX_RETRIES:
                     await asyncio.sleep(self.INITIAL_BACKOFF * (2**attempt))
                     continue
+                else:
+                    print("Gateway connection error: ",last_error)
+
 
         raise GatewayUnavailableError(
             f"Gateway unavailable after {self.MAX_RETRIES + 1} attempts"
