@@ -1196,3 +1196,128 @@ If your server cert's CN doesn't match localhost, you can relax hostname checks 
 
 HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
 Don't ship this to production.
+
+Here's a Java snippet using the standard JDK 11+ HttpClient with the client.pfx bundle for mTLS:
+
+
+import javax.net.ssl.*;
+import java.io.FileInputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.security.KeyStore;
+import java.security.SecureRandom;
+import java.time.Duration;
+
+public class DmzApiClient {
+
+    private static final String API_BASE = "https://localhost:8443";
+    private static final String PFX_PATH = "client.pfx";
+    private static final String PFX_PASSWORD = "changeme";
+    private static final String CA_PATH = "ca.crt";
+
+    public static void main(String[] args) throws Exception {
+        HttpClient http = buildMtlsClient();
+
+        // 1) Health check
+        HttpRequest health = HttpRequest.newBuilder()
+                .uri(URI.create(API_BASE + "/health"))
+                .GET()
+                .build();
+
+        HttpResponse<String> r1 = http.send(health, HttpResponse.BodyHandlers.ofString());
+        System.out.println("Health: " + r1.statusCode() + " " + r1.body());
+
+        // 2) Send a message
+        String payload = """
+                {
+                  "ID": "550e8400-e29b-41d4-a716-446655440000",
+                  "Project": "AAA",
+                  "TestID": "TST001",
+                  "Area": "Integration",
+                  "Date": "2026-01-30T11:22:33",
+                  "Status": "Inprogress",
+                  "Data": {"result": "pass", "note": "hello from java"}
+                }
+                """;
+
+        HttpRequest send = HttpRequest.newBuilder()
+                .uri(URI.create(API_BASE + "/messages"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload))
+                .timeout(Duration.ofSeconds(30))
+                .build();
+
+        HttpResponse<String> r2 = http.send(send, HttpResponse.BodyHandlers.ofString());
+        System.out.println("Send: " + r2.statusCode() + " " + r2.body());
+    }
+
+    /** Build an HttpClient that presents the client cert and trusts the app's CA. */
+    private static HttpClient buildMtlsClient() throws Exception {
+        // KeyStore = your identity (client cert + private key from the .pfx)
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        try (FileInputStream fis = new FileInputStream(PFX_PATH)) {
+            keyStore.load(fis, PFX_PASSWORD.toCharArray());
+        }
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(
+                KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(keyStore, PFX_PASSWORD.toCharArray());
+
+        // TrustStore = CAs you trust (the app's internal CA)
+        KeyStore trustStore = KeyStore.getInstance("PKCS12");
+        trustStore.load(null, null);
+        java.security.cert.CertificateFactory cf =
+                java.security.cert.CertificateFactory.getInstance("X.509");
+        try (FileInputStream fis = new FileInputStream(CA_PATH)) {
+            java.security.cert.X509Certificate ca =
+                    (java.security.cert.X509Certificate) cf.generateCertificate(fis);
+            trustStore.setCertificateEntry("dmz-api-ca", ca);
+        }
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(
+                TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(trustStore);
+
+        SSLContext ssl = SSLContext.getInstance("TLS");
+        ssl.init(kmf.getKeyManagers(), tmf.getTrustManagers(), new SecureRandom());
+
+        return HttpClient.newBuilder()
+                .sslContext(ssl)
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+    }
+}
+What it does
+Loads client.pfx (downloaded from /admin/keys) as the client identity — the JDK handles cert + private key
+Loads ca.crt into a trust store so the JDK accepts the self-signed server cert
+Builds an SSLContext with both, wires it into HttpClient
+Every request automatically presents the client cert during the TLS handshake
+Running
+
+# JDK 17+ recommended (for text blocks). JDK 11+ works if you replace """ with regular strings.
+javac DmzApiClient.java
+java DmzApiClient
+Make sure client.pfx and ca.crt are in the working directory (or update the paths).
+
+Maven/Gradle?
+No external deps needed — everything is in the JDK standard library. If you want HTTP ergonomics, swap HttpClient for something like OkHttp:
+
+
+// OkHttp version (with okhttp:4.x on the classpath)
+X509KeyManager km = (X509KeyManager) kmf.getKeyManagers()[0];
+X509TrustManager tm = (X509TrustManager) tmf.getTrustManagers()[0];
+
+OkHttpClient client = new OkHttpClient.Builder()
+        .sslSocketFactory(ssl.getSocketFactory(), tm)
+        .build();
+Common pitfalls
+unable to find valid certification path → CA isn't in the trust store (check CA_PATH)
+Received fatal alert: bad_certificate → client cert expired or revoked (regenerate in /admin/keys)
+HTTPS hostname wrong → server cert CN must match the hostname you connect to. If using IP, add a SubjectAlternativeName or disable hostname verification (test only)
+PKIX path building failed → PFX password wrong or pfx file corrupt
+Hostname verification disable (dev only)
+If your server cert's CN doesn't match localhost, you can relax hostname checks for testing:
+
+
+HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
+Don't ship this to production.
