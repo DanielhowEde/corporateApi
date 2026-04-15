@@ -428,7 +428,7 @@ async def user_send_message_submit(
 
     if not gateway_client:
         return RedirectResponse(
-            url=f"/user/send?error=Gateway+client+not+configured",
+            url="/user/send?error=Gateway+client+not+configured",
             status_code=status.HTTP_303_SEE_OTHER,
         )
 

@@ -9,7 +9,6 @@ Endpoints:
   GET /health - Health check
 """
 
-import json
 import uuid
 from datetime import datetime, timezone, timedelta
 

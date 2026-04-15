@@ -48,7 +48,6 @@ You can also edit the whitelist.json file directly:
 """
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path

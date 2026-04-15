@@ -5,8 +5,6 @@ Utility functions for DMZ API.
 import logging
 import uuid
 from contextvars import ContextVar
-from functools import wraps
-from typing import Callable
 
 # Context variable for request ID tracking
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")

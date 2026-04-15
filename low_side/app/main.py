@@ -10,7 +10,6 @@ Security Assumptions:
   (enforced by proxy configuration; placeholder middleware included for future cert checks)
 """
 
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict

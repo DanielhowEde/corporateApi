@@ -10,7 +10,6 @@ Messages must be cert-wrapped before being sent to the DMZ Gateway.
 """
 
 import asyncio
-import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 

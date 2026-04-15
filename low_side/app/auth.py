@@ -12,7 +12,6 @@ import json
 import os
 import secrets
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, Optional
 
 from .config import config

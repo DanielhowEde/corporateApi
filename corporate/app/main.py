@@ -15,7 +15,6 @@ Corporate-Specific Features:
 - Projects must be present and enabled to send/receive messages
 """
 
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict

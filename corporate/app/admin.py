@@ -212,7 +212,7 @@ async def admin_add_project(
 
     if not validate_project_code(code):
         return RedirectResponse(
-            url=f"/admin/projects?error=Invalid+project+code.+Must+be+3+uppercase+alphanumeric+characters.",
+            url="/admin/projects?error=Invalid+project+code.+Must+be+3+uppercase+alphanumeric+characters.",
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -226,7 +226,7 @@ async def admin_add_project(
     except WhitelistError as e:
         logger.warning(f"Admin failed to add project: {code}, error={e}")
         return RedirectResponse(
-            url=f"/admin/projects?error=Project+already+exists",
+            url="/admin/projects?error=Project+already+exists",
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -249,7 +249,7 @@ async def admin_enable_project(
             status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
-        url=f"/admin/projects?error=Project+not+found",
+        url="/admin/projects?error=Project+not+found",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -272,7 +272,7 @@ async def admin_disable_project(
             status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
-        url=f"/admin/projects?error=Project+not+found",
+        url="/admin/projects?error=Project+not+found",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -295,7 +295,7 @@ async def admin_remove_project(
             status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
-        url=f"/admin/projects?error=Project+not+found",
+        url="/admin/projects?error=Project+not+found",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

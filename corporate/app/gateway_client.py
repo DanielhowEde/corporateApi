@@ -3,7 +3,6 @@ HTTP client for forwarding messages to the DMZ Gateway.
 """
 
 import asyncio
-import os
 from typing import Any, Dict, Optional
 
 import httpx
@@ -186,7 +185,6 @@ class GatewayClient:
         payload = message_data
         cert_client = getattr(self, "_cert_client", None)
         if cert_client:
-            from .cert_client import CertGatewayError, CertGatewayUnavailableError
 
             logger.info(f"Requesting cert wrap for message: message_id={message_id}")
             wrapped = await cert_client.wrap_message(message_data)
