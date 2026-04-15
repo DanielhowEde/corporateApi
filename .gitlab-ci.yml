@@ -278,124 +278,62 @@ integration:
     LOW_SIDE_URL: "http://localhost:8002"
     CORPORATE_URL: "http://localhost:8001"
   script:
-    - 'echo "=== Setting up integration test environment ==="'
-    - "mkdir -p reports"
-    - 'cd corporate && python -m venv venv && . venv/bin/activate && pip install -r requirements.txt && deactivate && cd ..'
-    - 'cd low_side && python -m venv venv && . venv/bin/activate && pip install -r requirements.txt && deactivate && cd ..'
-    - "pip install fastapi uvicorn httpx"
-    - "mkdir -p corporate/data"
+    # Everything in one block scalar so we don't fight YAML quoting.
     - |
-      cat > corporate/data/whitelist.json <<'EOF'
-      {"projects":{"AAA":{"enabled":true},"BBB":{"enabled":true}}}
-      EOF
-    - 'echo "Whitelist seeded"'
-    - 'echo "Starting mock cert gateway on :8003..."'
-    - "cd mock_cert_gateway && python -m uvicorn main:app --host 0.0.0.0 --port 8003 &"
-    - "cd .."
-    - 'echo "Starting mock gateway on :8000..."'
-    - "cd mock_gateway && python -m uvicorn main:app --host 0.0.0.0 --port 8000 &"
-    - "cd .."
-    - 'echo "Starting corporate service on :8001..."'
-    - "cd corporate && ./venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 &"
-    - "cd .."
-    - 'echo "Starting low-side service on :8002..."'
-    - "cd low_side && ./venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 &"
-    - "cd .."
-    - |
-      echo "Waiting for services to start..."
+      set -e
+
+      echo "=== Setup ==="
+      mkdir -p reports corporate/data
+
+      # Install each service into its own venv
+      python -m venv corporate/venv
+      corporate/venv/bin/pip install --quiet -r corporate/requirements.txt
+
+      python -m venv low_side/venv
+      low_side/venv/bin/pip install --quiet -r low_side/requirements.txt
+
+      # System python used for mocks + the test harness
+      pip install --quiet fastapi uvicorn httpx
+
+      # Seed whitelist so project AAA/BBB are accepted
+      printf '%s\n' '{"projects":{"AAA":{"enabled":true},"BBB":{"enabled":true}}}' \
+        > corporate/data/whitelist.json
+      echo "  whitelist seeded"
+
+      echo "=== Starting services ==="
+      ( cd mock_cert_gateway && python -m uvicorn main:app --host 0.0.0.0 --port 8003 >/tmp/cert-gw.log 2>&1 ) &
+      ( cd mock_gateway      && python -m uvicorn main:app --host 0.0.0.0 --port 8000 >/tmp/gw.log      2>&1 ) &
+      ( cd corporate         && ./venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 >/tmp/corp.log 2>&1 ) &
+      ( cd low_side          && ./venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 >/tmp/low.log  2>&1 ) &
+
+      echo "=== Waiting for services to become ready ==="
       for port in 8003 8000 8001 8002; do
         ready=0
-        for i in 1 2 3 4 5 6 7 8 9 10; do
-          if python -c "import httpx; r=httpx.get('http://localhost:${port}/health', timeout=2); raise SystemExit(0 if r.status_code == 200 else 1)" 2>/dev/null; then
-            echo "  Port ${port} ready"
+        for i in $(seq 1 30); do
+          if curl -sf "http://localhost:${port}/health" >/dev/null 2>&1; then
+            echo "  :${port} ready"
             ready=1
             break
           fi
           sleep 1
         done
         if [ "$ready" -ne 1 ]; then
-          echo "Port ${port} did not become ready"
+          echo "!! Port ${port} did not become ready — logs:"
+          for f in /tmp/cert-gw.log /tmp/gw.log /tmp/corp.log /tmp/low.log; do
+            echo "--- $f ---"; tail -40 "$f" 2>/dev/null || true
+          done
           exit 1
         fi
       done
-    - 'echo "=== Health Checks ==="'
-    - |
-      'python -c "import httpx; r=httpx.get('"'http://localhost:8003/health'"'); print(f''Cert GW:   {r.status_code}''); assert r.status_code==200"'
-    - |
-      'python -c "import httpx; r=httpx.get('"'http://localhost:8000/health'"'); print(f''Gateway:   {r.status_code}''); assert r.status_code==200"'
-    - |
-      'python -c "import httpx; r=httpx.get('"'http://localhost:8001/health'"'); print(f''Corporate: {r.status_code}''); assert r.status_code==200"'
-    - |
-      'python -c "import httpx; r=httpx.get('"'http://localhost:8002/health'"'); print(f''Low-side:  {r.status_code}''); assert r.status_code==200"'
-    - |
-      echo "=== Integration Test: Full message flow ==="
-      python - <<'PY'
-      import httpx, uuid
-      msg = {
-          "ID": str(uuid.uuid4()),
-          "Project": "AAA",
-          "TestID": "TST001",
-          "Area": "Integration",
-          "Date": "2026-04-08T12:00:00",
-          "Status": "Inprogress",
-          "Data": {"result": "pass", "note": "integration test"},
-      }
-      print(f"Sending message: {msg['ID']}")
-      r = httpx.post("http://localhost:8001/messages", json=msg, timeout=30)
-      print(f"Corporate /messages response: {r.status_code}")
-      print(f"Response body: {r.text}")
-      assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-      body = r.json()
-      assert body["success"] is True
-      assert body["message_id"] == msg["ID"]
-      r2 = httpx.get("http://localhost:8002/health")
-      assert r2.status_code == 200
-      print("Full message flow test passed!")
-      PY
-    - |
-      echo "=== Integration Test: Cert gateway wrapping ==="
-      python - <<'PY'
-      import httpx, uuid
-      msg = {
-          "ID": str(uuid.uuid4()),
-          "Project": "AAA",
-          "TestID": "TST002",
-          "Area": "Cert Test",
-          "Date": "2026-04-08T12:00:00",
-          "Status": "Complete",
-          "Data": {"result": "pass"},
-      }
-      print(f"Testing cert wrap for: {msg['ID']}")
-      r = httpx.post("http://localhost:8003/wrap", json=msg, timeout=10)
-      print(f"Cert gateway response: {r.status_code}")
-      body = r.json()
-      assert "token" in body
-      assert "expires_at" in body
-      assert "message" in body
-      print(f"Token: {body['token'][:50]}...")
-      print(f"Expires: {body['expires_at']}")
-      print("Cert wrapping test passed!")
-      PY
-    - |
-      echo "=== Integration Test: Low-side receive ==="
-      python - <<'PY'
-      import httpx, uuid
-      msg = {
-          "ID": str(uuid.uuid4()),
-          "Project": "AAA",
-          "TestID": "TST003",
-          "Area": "Low Side",
-          "Date": "2026-04-08T12:00:00",
-          "Status": "Inprogress",
-          "Data": {"source": "integration"},
-      }
-      print(f"Sending to low-side /dmz/messages: {msg['ID']}")
-      r = httpx.post("http://localhost:8002/dmz/messages", json=msg, timeout=10)
-      print(f"Low-side response: {r.status_code}")
-      assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-      print("Low-side receive test passed!")
-      PY
-    - 'echo "=== Integration tests complete ==="'
+
+      echo "=== Health checks ==="
+      curl -sf http://localhost:8003/health && echo "  cert-gw ok"
+      curl -sf http://localhost:8000/health && echo "  gateway ok"
+      curl -sf http://localhost:8001/health && echo "  corporate ok"
+      curl -sf http://localhost:8002/health && echo "  low-side ok"
+
+      echo "=== Integration tests ==="
+      python tests/integration_suite.py
   after_script:
     - 'pkill -f "uvicorn.*8003" 2>/dev/null || true'
     - 'pkill -f "uvicorn.*8000" 2>/dev/null || true'
