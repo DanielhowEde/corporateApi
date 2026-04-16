@@ -1,19 +1,17 @@
 {
   "users": {
     "admin": {
-      "created": "2026-02-27T17:03:54.324251",
+      "created": "2026-04-16T18:32:09.323511",
       "enabled": true,
       "must_change_password": true,
-      "password_hash": "4fd7d6bef78cb43560a33c05999b58d1:28249874041dc26f818e6e8d8aa770adafc9b5e26c47590a83cdabae09719e64",
+      "password_hash": "99aa3343727c08a52285fe1d4a53109c:e93aeb8bf58704588fada9dafd507bafa98873c58400e4fbf8385d03a2a0dad8",
       "role": "admin"
     },
-    "testUser": {
-      "created": "2026-03-26T15:08:25.582383",
+    "tester": {
       "enabled": true,
       "must_change_password": false,
-      "password_hash": "5b87cc896bd01d726ef89a9dd3c7b5b3:7efd790d852e1ed3ea214b52c6cd41343618a70d283b70d8d6e8121d8cc51870",
-      "role": "user",
-      "updated": "2026-04-07T21:08:13.511255"
+      "password_hash": "bc74f996bb032ef8e361b940d19b32c3:448afea7d5482d8bc7bb01efceca2145b1ac168a5b1b98708b700e33a392376f",
+      "role": "user"
     }
   }
 }

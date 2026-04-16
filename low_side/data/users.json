@@ -1,0 +1,9 @@
+{
+  "users": {
+    "tester": {
+      "enabled": true,
+      "must_change_password": false,
+      "password_hash": "22e0654c0499bf2697ba0f3945c071be:f4591be10233869aedd36d31e9b87340fb48869af882ae7fd85f9ae0a8499aea"
+    }
+  }
+}

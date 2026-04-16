@@ -273,6 +273,7 @@ async def send_message_submit(
     message_id: str = Form(...),
     project: str = Form(...),
     test_id: str = Form(...),
+    area: str = Form(...),
     timestamp: str = Form(...),
     test_status: str = Form(...),
     data_json: str = Form("{}"),
@@ -311,9 +312,10 @@ async def send_message_submit(
     message_data = {
         "ID": message_id.strip(),
         "Project": project.upper().strip(),
-        "Test ID": test_id.strip(),
-        "Timestamp": timestamp.strip(),
-        "Test Status": test_status.strip(),
+        "TestID": test_id.strip(),
+        "Area": area.strip(),
+        "Date": timestamp.strip(),
+        "Status": test_status.strip(),
         "Data": data_dict,
     }
 
