@@ -7,6 +7,17 @@
       "password_hash": "99aa3343727c08a52285fe1d4a53109c:e93aeb8bf58704588fada9dafd507bafa98873c58400e4fbf8385d03a2a0dad8",
       "role": "admin"
     },
+    "test": {
+      "allowed_projects": [
+        "AAA"
+      ],
+      "created": "2026-04-17T20:17:12.097089",
+      "enabled": true,
+      "must_change_password": false,
+      "password_hash": "c6f0f507ebbe24cdd82e807eb1e7341d:51763c990e4482bc500229176ae2c984e4a878c831566b1160c6deb52cd9ba85",
+      "role": "user",
+      "updated": "2026-04-17T20:28:09.370870"
+    },
     "tester": {
       "enabled": true,
       "must_change_password": false,

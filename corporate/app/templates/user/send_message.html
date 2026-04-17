@@ -27,12 +27,18 @@
 
             <div class="form-group">
                 <label for="project">Project</label>
-                <select id="project" name="project" class="form-control" required>
+                <select id="project" name="project" class="form-control" required
+                        {% if not projects %}disabled{% endif %}>
                     <option value="">-- Select Project --</option>
                     {% for code, enabled in projects %}
                     <option value="{{ code }}">{{ code }}</option>
                     {% endfor %}
                 </select>
+                {% if not projects %}
+                <p class="form-help" style="color:#dc2626;">
+                    No projects authorised for your account. Ask an admin to grant access.
+                </p>
+                {% endif %}
                 <p class="form-help">Only authorized projects are shown.</p>
             </div>
         </div>

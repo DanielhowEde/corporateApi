@@ -14,6 +14,7 @@ User roles:
 import hashlib
 import json
 import os
+import re
 import secrets
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,43 @@ from typing import Dict, List, Optional, Tuple
 from .utils import setup_logging
 
 logger = setup_logging("auth")
+
+
+# =============================================================================
+# Password policy
+# =============================================================================
+#
+# Applied on every path that sets or resets a password: create_user,
+# create_admin_user, update_user_password, and the user-driven change form.
+# =============================================================================
+
+PASSWORD_MIN_LENGTH = 12
+PASSWORD_POLICY_TEXT = (
+    f"Password must be at least {PASSWORD_MIN_LENGTH} characters and include "
+    "uppercase, lowercase, a digit, and a symbol."
+)
+
+_PASSWORD_CHECKS = [
+    (re.compile(r"[A-Z]"), "an uppercase letter"),
+    (re.compile(r"[a-z]"), "a lowercase letter"),
+    (re.compile(r"\d"), "a digit"),
+    (re.compile(r"[^A-Za-z0-9]"), "a symbol"),
+]
+
+
+def validate_password_strength(password: str) -> Tuple[bool, str]:
+    """
+    Enforce the password policy.
+
+    Returns (True, "") when the password meets the policy, otherwise
+    (False, reason).
+    """
+    if not password or len(password) < PASSWORD_MIN_LENGTH:
+        return False, f"Password must be at least {PASSWORD_MIN_LENGTH} characters"
+    missing = [desc for pattern, desc in _PASSWORD_CHECKS if not pattern.search(password)]
+    if missing:
+        return False, "Password must contain " + ", ".join(missing)
+    return True, ""
 
 
 # Configuration from environment
@@ -178,6 +216,31 @@ def verify_user_credentials(username: str, password: str) -> bool:
     return _verify_password_hash(password, user.get("password_hash", ""))
 
 
+def classify_login_failure(username: str, role: str) -> str:
+    """
+    Classify why a login failed, for audit purposes.
+
+    Never exposed to the end user — only the generic error is shown there
+    — but the specific reason is valuable in the audit log.
+
+    Args:
+        username: The username that was attempted.
+        role:     Expected role ("admin" or "user").
+
+    Returns one of:
+        user_not_found | wrong_role | user_disabled | bad_password
+    """
+    user = _load_users().get(username)
+    if not user:
+        return "user_not_found"
+    actual_role = user.get("role", "user")
+    if actual_role != role:
+        return "wrong_role"
+    if not user.get("enabled", True):
+        return "user_disabled"
+    return "bad_password"
+
+
 def create_user_session(username: str) -> str:
     """Create a new user session."""
     token = secrets.token_urlsafe(32)
@@ -223,8 +286,9 @@ def create_admin_user(
     """
     if not username or len(username) < 3:
         return False, "Username must be at least 3 characters"
-    if not password or len(password) < 6:
-        return False, "Password must be at least 6 characters"
+    ok, msg = validate_password_strength(password)
+    if not ok:
+        return False, msg
 
     users = _load_users()
     if username in users:
@@ -297,8 +361,9 @@ def create_user(
     """
     if not username or len(username) < 3:
         return False, "Username must be at least 3 characters"
-    if not password or len(password) < 6:
-        return False, "Password must be at least 6 characters"
+    ok, msg = validate_password_strength(password)
+    if not ok:
+        return False, msg
 
     users = _load_users()
     if username in users:
@@ -322,8 +387,9 @@ def update_user_password(
     username: str, new_password: str, clear_must_change: bool = True
 ) -> Tuple[bool, str]:
     """Update a user's or admin's password."""
-    if not new_password or len(new_password) < 6:
-        return False, "Password must be at least 6 characters"
+    ok, msg = validate_password_strength(new_password)
+    if not ok:
+        return False, msg
 
     users = _load_users()
     if username not in users:
@@ -406,3 +472,51 @@ def list_users() -> List[Tuple[str, bool, str]]:
 def get_user_count() -> int:
     """Get the number of regular users."""
     return len([u for u in _load_users().values() if u.get("role", "user") == "user"])
+
+
+# =============================================================================
+# Per-user project access control
+# =============================================================================
+
+
+def get_user_allowed_projects(username: str) -> List[str]:
+    """
+    Return the list of project codes this user is allowed to send to.
+
+    Empty list means the user has no projects assigned and cannot send
+    anything (explicit-grant model). Admin assigns projects via the Users
+    page.
+    """
+    user = _load_users().get(username, {})
+    allowed = user.get("allowed_projects", [])
+    if not isinstance(allowed, list):
+        return []
+    return [str(code).upper() for code in allowed if code]
+
+
+def set_user_allowed_projects(
+    username: str, project_codes: List[str]
+) -> Tuple[bool, str]:
+    """
+    Replace a user's allowed projects list.
+
+    Duplicates are removed, codes are uppercased, and anything blank is
+    skipped. Returns (success, message).
+    """
+    users = _load_users()
+    if username not in users:
+        return False, f"User '{username}' not found"
+
+    clean = sorted({str(c).upper().strip() for c in project_codes if str(c).strip()})
+    users[username]["allowed_projects"] = clean
+    users[username]["updated"] = datetime.now().isoformat()
+
+    if _save_users(users):
+        logger.info(f"User allowed_projects updated: {username} -> {clean}")
+        return True, f"Projects for '{username}' updated"
+    return False, "Failed to save user"
+
+
+def user_can_send_to_project(username: str, project_code: str) -> bool:
+    """True iff this user has been explicitly granted the project code."""
+    return project_code.upper() in get_user_allowed_projects(username)

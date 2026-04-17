@@ -30,8 +30,8 @@
                    id="admin_password"
                    name="password"
                    class="form-control"
-                   placeholder="Password (min 6 chars)"
-                   minlength="6"
+                   placeholder="Password (min 12, upper+lower+digit+symbol)"
+                   minlength="12"
                    required>
         </div>
         <div class="form-group form-check">
@@ -85,8 +85,8 @@
                             <input type="password"
                                    name="new_password"
                                    class="form-control"
-                                   placeholder="New password (min 6 chars)"
-                                   minlength="6"
+                                   placeholder="New password (min 12, upper+lower+digit+symbol)"
+                                   minlength="12"
                                    required>
                         </div>
                         <button type="submit" class="btn btn-primary btn-sm">Update</button>
@@ -123,8 +123,8 @@
                    id="password"
                    name="password"
                    class="form-control"
-                   placeholder="Password (min 6 chars)"
-                   minlength="6"
+                   placeholder="Password (min 12, upper+lower+digit+symbol)"
+                   minlength="12"
                    required>
         </div>
         <div class="form-group form-check">
@@ -144,56 +144,92 @@
             <tr>
                 <th>Username</th>
                 <th>Status</th>
+                <th>Projects</th>
                 <th>Created</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
-            {% for username, enabled, created in users %}
+            {% for u in users %}
             <tr>
-                <td><strong>{{ username }}</strong></td>
+                <td><strong>{{ u.username }}</strong></td>
                 <td>
-                    {% if enabled %}
+                    {% if u.enabled %}
                     <span class="status-badge status-enabled">Enabled</span>
                     {% else %}
                     <span class="status-badge status-disabled">Disabled</span>
                     {% endif %}
                 </td>
-                <td>{{ created[:10] if created else '-' }}</td>
+                <td>
+                    {% if u.allowed_projects %}
+                        {% for code in u.allowed_projects %}
+                        <span style="background:#e0e7ff; color:#3730a3; padding:0.1rem 0.4rem; border-radius:4px; font-size:0.8rem; margin-right:0.2rem;">{{ code }}</span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="text-muted" style="font-size:0.85rem;">none</span>
+                    {% endif %}
+                </td>
+                <td>{{ u.created[:10] if u.created else '-' }}</td>
                 <td class="actions">
-                    {% if enabled %}
-                    <form action="/admin/users/{{ username }}/disable" method="post" style="display:inline;">
+                    {% if u.enabled %}
+                    <form action="/admin/users/{{ u.username }}/disable" method="post" style="display:inline;">
                         <button type="submit" class="btn btn-secondary btn-sm">Disable</button>
                     </form>
                     {% else %}
-                    <form action="/admin/users/{{ username }}/enable" method="post" style="display:inline;">
+                    <form action="/admin/users/{{ u.username }}/enable" method="post" style="display:inline;">
                         <button type="submit" class="btn btn-success btn-sm">Enable</button>
                     </form>
                     {% endif %}
 
-                    <button type="button" class="btn btn-primary btn-sm" onclick="showResetForm('user-{{ username }}')">Reset Password</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="showResetForm('projects-{{ u.username }}')">Edit Projects</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="showResetForm('user-{{ u.username }}')">Reset Password</button>
 
-                    <form action="/admin/users/{{ username }}/delete" method="post" style="display:inline;"
-                          onsubmit="return confirm('Are you sure you want to delete user {{ username }}?');">
+                    <form action="/admin/users/{{ u.username }}/delete" method="post" style="display:inline;"
+                          onsubmit="return confirm('Are you sure you want to delete user {{ u.username }}?');">
                         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                     </form>
                 </td>
             </tr>
-            <!-- Hidden password reset form for user -->
-            <tr id="reset-user-{{ username }}" style="display: none; background-color: #f7fafc;">
-                <td colspan="4">
-                    <form action="/admin/users/{{ username }}/reset-password" method="post" class="form-inline">
+            <!-- Hidden: allowed_projects editor -->
+            <tr id="reset-projects-{{ u.username }}" style="display: none; background-color: #f7fafc;">
+                <td colspan="5">
+                    <form action="/admin/users/{{ u.username }}/projects" method="post">
+                        <strong>Allowed projects for {{ u.username }}:</strong>
+                        <p class="text-muted" style="font-size:0.85rem; margin:0.25rem 0;">
+                            Tick every project code this user may send to. Unticked = cannot send to that project. No projects listed below means the whitelist is empty — add projects first.
+                        </p>
+                        <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin:0.5rem 0;">
+                            {% for code in whitelist_projects %}
+                            <label style="display:inline-flex; align-items:center; gap:0.3rem; background:white; padding:0.3rem 0.6rem; border:1px solid #cbd5e0; border-radius:4px;">
+                                <input type="checkbox" name="allowed" value="{{ code }}"
+                                       {% if code in u.allowed_projects %}checked{% endif %}>
+                                <span style="font-weight:600;">{{ code }}</span>
+                            </label>
+                            {% endfor %}
+                            {% if not whitelist_projects %}
+                            <span class="text-muted">No projects in whitelist. Go to the Projects page to add some.</span>
+                            {% endif %}
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Save Projects</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="hideResetForm('projects-{{ u.username }}')">Cancel</button>
+                    </form>
+                </td>
+            </tr>
+            <!-- Hidden: password reset -->
+            <tr id="reset-user-{{ u.username }}" style="display: none; background-color: #f7fafc;">
+                <td colspan="5">
+                    <form action="/admin/users/{{ u.username }}/reset-password" method="post" class="form-inline">
                         <div class="form-group">
-                            <label>New Password for {{ username }}</label>
+                            <label>New Password for {{ u.username }}</label>
                             <input type="password"
                                    name="new_password"
                                    class="form-control"
-                                   placeholder="New password (min 6 chars)"
-                                   minlength="6"
+                                   placeholder="New password (min 12, upper+lower+digit+symbol)"
+                                   minlength="12"
                                    required>
                         </div>
                         <button type="submit" class="btn btn-primary btn-sm">Update</button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="hideResetForm('user-{{ username }}')">Cancel</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="hideResetForm('user-{{ u.username }}')">Cancel</button>
                     </form>
                 </td>
             </tr>
@@ -208,7 +244,8 @@
 <div class="card">
     <h2>Password Requirements</h2>
     <ul style="margin: 0.5rem 0 0 1.5rem; color: #718096;">
-        <li>Minimum 6 characters</li>
+        <li>Minimum <strong>12 characters</strong></li>
+        <li>Must include at least one <strong>uppercase</strong>, one <strong>lowercase</strong>, one <strong>digit</strong>, and one <strong>symbol</strong></li>
         <li>Passwords are stored with salted SHA-256 hashing</li>
         <li>New accounts require a password change on first login</li>
         <li>The last remaining admin account cannot be deleted</li>

@@ -68,6 +68,43 @@ class GatewayClient:
             await self._client.aclose()
             self._client = None
 
+    async def report_failed_login(
+        self, username: str, reason: str = "bad_password"
+    ) -> None:
+        """
+        Forward a failed login event to corporate via the gateway (best-effort).
+
+        Corporate is the central audit sink — all failed login attempts from
+        the low-side are shipped there so there's a single place to review.
+        Failures are logged but never raise: auth should never be blocked by
+        an audit pipeline outage.
+        """
+        from datetime import datetime
+
+        payload = {
+            "username": username,
+            "reason": reason,
+            "source": "low-side",
+            "timestamp": datetime.now().isoformat(),
+        }
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                "/audit/failed-login",
+                json=payload,
+                headers={"X-Request-ID": get_request_id()},
+            )
+            if response.status_code < 300:
+                logger.info(f"Audit event sent to gateway: username={username}")
+            else:
+                logger.warning(
+                    f"Gateway returned {response.status_code} for audit event: {username}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Audit event to gateway failed (non-fatal): username={username}, error={e}"
+            )
+
     async def send_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Send a message to the DMZ Gateway.

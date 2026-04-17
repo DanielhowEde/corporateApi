@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+# Pin pytest to this service — never collect from sibling services.
+testpaths = ["tests"]
+pythonpath = ["."]

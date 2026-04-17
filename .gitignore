@@ -1,7 +1,87 @@
+# =============================================================================
+# Python
+# =============================================================================
 __pycache__/
 */__pycache__/
+**/__pycache__/
 *.py[cod]
-.venv/
-env/
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 *.log
+
+# Virtualenvs
+.venv/
+venv/
+env/
+*/venv/
+*/.venv/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# =============================================================================
+# Runtime data — never commit any of this
+# =============================================================================
+# Messages: received/sent payloads stored per-project
+corporate/data/messages/
+low_side/data/messages/
+
+# Tmp dir used for atomic writes
+corporate/data/tmp/
+low_side/data/tmp/
+
+# Application error records
+corporate/data/errors/
+low_side/data/errors/
+
+# Pending message queue (cert-wrapped, awaiting manual send)
+corporate/data/pending/
+
+# Failed-login audit trail
+corporate/data/audit/
+
+# Generated RSA keys + CA (CRITICAL — CA private key lives here)
+corporate/data/keys/
+low_side/data/keys/
+
+# User accounts with password hashes
+corporate/data/users.json
+low_side/data/users.json
+data/users.json
+
+# Runtime project whitelist — ship a seed via config instead
+corporate/data/whitelist.json
+
+# Mock gateway's received-message inspection dir
+mock_gateway/received/
+
+# =============================================================================
+# Secrets / crypto material (belt-and-braces — certs/.gitignore also covers these)
+# =============================================================================
+*.key
+*.pem
+*.pfx
+*.p12
+*.crt
+*.csr
+*.srl
+*.ext
+
+# Real config.json — only the *.example.json templates should be tracked
+corporate/config.json
+low_side/config.json
+
+# =============================================================================
+# CI / build artifacts
+# =============================================================================
+reports/
+build/
+release/
 .cache/
+.sonar/

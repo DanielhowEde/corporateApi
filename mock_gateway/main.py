@@ -218,6 +218,37 @@ async def sync_client_cert(request: Request):
         )
 
 
+@app.post("/audit/failed-login")
+async def forward_failed_login(request: Request):
+    """Forward a failed-login audit event from low-side to corporate."""
+    try:
+        body = await request.json()
+        username = body.get("username", "unknown")
+        print(f"[GATEWAY] Audit event: failed login for {username}")
+
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(
+                    f"{CORPORATE_URL}/dmz/audit/failed-login", json=body
+                )
+            if response.status_code < 300:
+                print(f"[GATEWAY] Audit event forwarded to corporate: {username}")
+            else:
+                print(f"[GATEWAY] Corporate rejected audit: {response.status_code}")
+        except Exception as forward_err:
+            print(f"[GATEWAY] Could not forward audit event: {forward_err}")
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "accepted", "username": username},
+        )
+    except Exception as e:
+        print(f"[GATEWAY] Audit event error: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
 

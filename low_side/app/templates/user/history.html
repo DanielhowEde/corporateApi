@@ -28,7 +28,7 @@
                    id="search"
                    name="search"
                    class="form-control"
-                   placeholder="Search by ID, Test ID, Status..."
+                   placeholder="Search by ID, TestID, Area, Status..."
                    value="{{ current_search }}">
         </div>
 
@@ -146,9 +146,9 @@
 <div class="card">
     <p class="text-muted">
         {% if current_project or current_search %}
-        No messages found matching your filters. Try broadening your search.
+        No messages found matching your filters.
         {% else %}
-        No messages stored yet. Messages received from the gateway will appear here.
+        No messages stored yet.
         {% endif %}
     </p>
 </div>

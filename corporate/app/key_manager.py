@@ -223,30 +223,39 @@ class KeyManager:
                 .sign(ca_key, hashes.SHA256())
             )
 
-            # Write private key
+            def _write_with_sync(path: Path, data: bytes) -> None:
+                """Write bytes and fsync — fsync requires a writable fd on Windows."""
+                with open(path, "wb") as f:
+                    f.write(data)
+                    f.flush()
+                    os.fsync(f.fileno())
+
+            # Private key
             private_path = key_dir / "private.pem"
-            private_path.write_bytes(
+            _write_with_sync(
+                private_path,
                 private_key.private_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PrivateFormat.PKCS8,
                     encryption_algorithm=serialization.NoEncryption(),
-                )
+                ),
             )
 
-            # Write public key
+            # Public key
             public_path = key_dir / "public.pem"
-            public_path.write_bytes(
+            _write_with_sync(
+                public_path,
                 public_key.public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo,
-                )
+                ),
             )
 
-            # Write client cert
+            # Client cert
             cert_path = key_dir / "client.crt"
-            cert_path.write_bytes(client_cert.public_bytes(serialization.Encoding.PEM))
+            _write_with_sync(cert_path, client_cert.public_bytes(serialization.Encoding.PEM))
 
-            # Write PFX bundle (cert + key + CA chain)
+            # PFX bundle (cert + key + CA chain)
             pfx_path = key_dir / "client.pfx"
             pfx_bytes = pkcs12.serialize_key_and_certificates(
                 name=name.encode("utf-8"),
@@ -257,12 +266,7 @@ class KeyManager:
                     self.DEFAULT_PFX_PASSWORD.encode("utf-8")
                 ),
             )
-            pfx_path.write_bytes(pfx_bytes)
-
-            # Fsync all files
-            for p in [private_path, public_path, cert_path, pfx_path]:
-                with open(p, "rb") as f:
-                    os.fsync(f.fileno())
+            _write_with_sync(pfx_path, pfx_bytes)
 
             # Metadata
             metadata = {

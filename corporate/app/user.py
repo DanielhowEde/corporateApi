@@ -27,6 +27,7 @@ from .file_store import FileStore
 from .models import Message
 from .whitelist import ProjectWhitelist
 from .utils import setup_logging
+from . import audit
 from . import auth
 
 logger = setup_logging("user_interface")
@@ -108,10 +109,9 @@ def require_auth(
 async def user_login_page(request: Request, error: str = "", message: str = ""):
     """Login page."""
     return templates.TemplateResponse(
+        request,
         "user/login.html",
-        {
-            "request": request,
-            "title": "Login",
+        {"title": "Login",
             "error": error,
             "message": message,
             **get_branding(),
@@ -150,7 +150,10 @@ async def user_login_submit(
         )
         return response
     else:
-        logger.warning(f"Failed login attempt for user: {username}")
+        reason = auth.classify_login_failure(username, role="user")
+        audit.record_failed_login(
+            username=username, source="corporate-user", reason=reason
+        )
         return RedirectResponse(
             url="/user/login?error=Invalid+username+or+password",
             status_code=status.HTTP_303_SEE_OTHER,
@@ -194,10 +197,9 @@ async def user_change_password_page(
     is_required = required == "1" or auth.user_must_change_password(username)
 
     return templates.TemplateResponse(
+        request,
         "user/change_password.html",
-        {
-            "request": request,
-            "title": "Change Password",
+        {"title": "Change Password",
             "username": username,
             "is_required": is_required,
             "error": error,
@@ -281,10 +283,9 @@ async def user_home(
         )
 
     return templates.TemplateResponse(
+        request,
         "user/home.html",
-        {
-            "request": request,
-            "title": "User Portal",
+        {"title": "User Portal",
             "username": username,
             "message": message,
             **get_branding(),
@@ -313,11 +314,16 @@ async def user_send_message_page(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    # Get list of enabled projects for dropdown
+    # Dropdown shows the intersection of:
+    #   - whitelist entries that are enabled
+    #   - the user's personal allowed_projects list (explicit grant required)
+    user_allowed = set(auth.get_user_allowed_projects(username))
     projects = []
     if whitelist:
         projects = [
-            (code, enabled) for code, enabled in whitelist.list_projects() if enabled
+            (code, enabled)
+            for code, enabled in whitelist.list_projects()
+            if enabled and code in user_allowed
         ]
 
     # Generate default values
@@ -326,10 +332,9 @@ async def user_send_message_page(
     default_timestamp = now.strftime("%Y-%m-%dT%H:%M:%S")
 
     return templates.TemplateResponse(
+        request,
         "user/send_message.html",
-        {
-            "request": request,
-            "title": "Send Message",
+        {"title": "Send Message",
             "username": username,
             "projects": projects,
             "default_id": default_id,
@@ -416,11 +421,21 @@ async def user_send_message_submit(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    # Check whitelist
+    # Check the global whitelist
     if whitelist and not whitelist.is_project_allowed(validated_message.Project):
         logger.warning(f"Project not whitelisted: {validated_message.Project}")
         return RedirectResponse(
             url=f"/user/send?error=Project+{validated_message.Project}+is+not+authorized",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    # Check per-user project access (admin must grant each project explicitly)
+    if not auth.user_can_send_to_project(username, validated_message.Project):
+        logger.warning(
+            f"User {username} not authorised for project {validated_message.Project}"
+        )
+        return RedirectResponse(
+            url=f"/user/send?error=You+are+not+authorised+to+send+to+{validated_message.Project}",
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -470,10 +485,9 @@ async def user_send_message_submit(
             ]
 
         return templates.TemplateResponse(
-            "user/send_message.html",
-            {
-                "request": request,
-                "title": "Send Message",
+            request,
+        "user/send_message.html",
+        {"title": "Send Message",
                 "username": username,
                 "projects": projects,
                 "default_id": str(uuid.uuid4()),
@@ -498,10 +512,9 @@ async def user_send_message_submit(
             ]
 
         return templates.TemplateResponse(
-            "user/send_message.html",
-            {
-                "request": request,
-                "title": "Send Message",
+            request,
+        "user/send_message.html",
+        {"title": "Send Message",
                 "username": username,
                 "projects": projects,
                 "default_id": message_id,
@@ -526,10 +539,9 @@ async def user_send_message_submit(
             ]
 
         return templates.TemplateResponse(
-            "user/send_message.html",
-            {
-                "request": request,
-                "title": "Send Message",
+            request,
+        "user/send_message.html",
+        {"title": "Send Message",
                 "username": username,
                 "projects": projects,
                 "default_id": message_id,
@@ -554,10 +566,9 @@ async def user_send_message_submit(
             ]
 
         return templates.TemplateResponse(
-            "user/send_message.html",
-            {
-                "request": request,
-                "title": "Send Message",
+            request,
+        "user/send_message.html",
+        {"title": "Send Message",
                 "username": username,
                 "projects": projects,
                 "default_id": message_id,
@@ -575,9 +586,12 @@ async def user_history(
     request: Request,
     project: str = "",
     search: str = "",
+    page: int = 1,
+    message: str = "",
+    error: str = "",
     session_token: Optional[str] = Cookie(None),
 ):
-    """Message history page with filtering and search."""
+    """Message history page with filtering, search, and pagination (20 per page)."""
     redirect, username = require_auth(session_token)
     if redirect:
         return redirect
@@ -588,15 +602,22 @@ async def user_history(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    messages = []
+    PER_PAGE = 20
+    all_messages = []
     projects_list = []
     if file_store:
-        messages = file_store.get_all_messages(
+        all_messages = file_store.get_all_messages(
             project_filter=project.upper().strip() if project else "",
             search_query=search.strip() if search else "",
-            limit=200,
+            limit=10000,
         )
         projects_list = file_store.list_projects()
+
+    total = len(all_messages)
+    total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * PER_PAGE
+    messages = all_messages[start:start + PER_PAGE]
 
     # Also get enabled projects from whitelist for the filter dropdown
     whitelist_projects = []
@@ -607,18 +628,54 @@ async def user_history(
     all_projects = sorted(set(projects_list + whitelist_projects))
 
     return templates.TemplateResponse(
+        request,
         "user/history.html",
-        {
-            "request": request,
-            "title": "Message History",
+        {"title": "Message History",
             "username": username,
             "messages": messages,
             "projects": all_projects,
             "current_project": project,
             "current_search": search,
-            "message_count": len(messages),
+            "message_count": total,
+            "page": page,
+            "total_pages": total_pages,
+            "per_page": PER_PAGE,
+            "page_start": start + 1 if messages else 0,
+            "page_end": start + len(messages),
+            "retention_days": config.history_retention_days,
+            "message": message,
+            "error": error,
             **get_branding(),
         },
+    )
+
+
+@router.post("/history/clear", name="user_history_clear")
+async def user_history_clear(
+    request: Request,
+    older_than_days: int = Form(0),
+    session_token: Optional[str] = Cookie(None),
+):
+    """Delete stored history messages older than N days (0 = all)."""
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    if not file_store:
+        return RedirectResponse(
+            url="/user/history?error=Service+not+configured",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    days = max(0, int(older_than_days))
+    deleted = file_store.clear_messages(older_than_days=days)
+    scope = "all" if days == 0 else f"older+than+{days}+day(s)"
+    logger.info(
+        f"User {username} cleared history: older_than_days={days}, deleted={deleted}"
+    )
+    return RedirectResponse(
+        url=f"/user/history?message=Cleared+{deleted}+message(s)+({scope})",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
@@ -650,10 +707,9 @@ async def user_pending(
         pending = file_store.list_pending()
 
     return templates.TemplateResponse(
+        request,
         "user/pending.html",
-        {
-            "request": request,
-            "title": "Pending Queue",
+        {"title": "Pending Queue",
             "username": username,
             "pending": pending,
             "pending_count": len(pending),

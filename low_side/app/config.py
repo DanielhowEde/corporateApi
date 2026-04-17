@@ -36,6 +36,10 @@ class Config:
         "GATEWAY_URL": "http://localhost:8000",
         # Error directory for storing application errors
         "ERROR_DIR": "./data/errors",
+
+        # Default retention for message history, in days.
+        # Used as the pre-filled value on the History "Clear" form.
+        "HISTORY_RETENTION_DAYS": "7",
         # Users file path (synced from corporate via gateway)
         "USERS_FILE_PATH": "./data/users.json",
     }
@@ -108,6 +112,14 @@ class Config:
     def error_dir(self) -> Path:
         """Get the error directory for storing application errors."""
         return Path(self._config["ERROR_DIR"])
+
+    @property
+    def history_retention_days(self) -> int:
+        """Default retention window (days) for the history clear form."""
+        try:
+            return int(self._config["HISTORY_RETENTION_DAYS"])
+        except (TypeError, ValueError):
+            return 7
 
     def reload(self) -> None:
         """Reload configuration from file and environment."""

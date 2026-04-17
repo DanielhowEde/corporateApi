@@ -27,15 +27,20 @@
 
             <div class="form-group">
                 <label for="project">Project</label>
-                <input type="text"
-                       id="project"
-                       name="project"
-                       class="form-control"
-                       placeholder="ABC"
-                       maxlength="3"
-                       style="text-transform: uppercase;"
-                       required>
-                <p class="form-help">3-character project code (A-Z, 0-9).</p>
+                <select id="project" name="project" class="form-control" required
+                        {% if not allowed_projects %}disabled{% endif %}>
+                    <option value="">-- Select Project --</option>
+                    {% for code in allowed_projects %}
+                    <option value="{{ code }}">{{ code }}</option>
+                    {% endfor %}
+                </select>
+                {% if not allowed_projects %}
+                <p class="form-help" style="color:#dc2626;">
+                    No projects authorised for your account. A corporate admin must grant access.
+                </p>
+                {% else %}
+                <p class="form-help">Projects granted by corporate admin.</p>
+                {% endif %}
             </div>
         </div>
 

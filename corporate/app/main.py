@@ -32,6 +32,7 @@ from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
 from .utils import generate_request_id, set_request_id, setup_logging
 from .whitelist import ProjectWhitelist
 from . import admin
+from . import audit
 from . import user
 
 # Configure logging
@@ -395,3 +396,40 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=ErrorResponse(request_id=request_id).model_dump(),
         )
+
+
+@app.post("/dmz/audit/failed-login", tags=["DMZ"])
+async def receive_failed_login(request: Request):
+    """
+    Receive a failed-login event from the low-side via the gateway.
+
+    Corporate is the central audit sink — every failed login across the
+    estate lands here. The payload carries the original source + timestamp
+    so we can reconstruct exactly what happened on the low-side.
+
+    **Security:**
+    - Only accepts requests from the gateway (enforced by proxy)
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Invalid JSON"}
+        )
+
+    username = (body.get("username") or "").strip()
+    source = body.get("source") or "low-side"
+    reason = body.get("reason") or "unknown"
+    timestamp = body.get("timestamp")
+
+    audit.record_failed_login(
+        username=username,
+        source=source,
+        reason=reason,
+        timestamp=timestamp,
+        request_id=request.state.request_id,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"status": "ok", "username": username},
+    )

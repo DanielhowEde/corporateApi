@@ -46,6 +46,10 @@ class Config:
         "KEYS_DIR": "./data/keys",
         # Pending messages directory (auto-send disabled)
         "PENDING_DIR": "./data/pending",
+
+        # Default retention for message history, in days.
+        # Used as the pre-filled value on the History "Clear" form.
+        "HISTORY_RETENTION_DAYS": "7",
         # Whitelist file path
         "WHITELIST_FILE_PATH": "./data/whitelist.json",
         # Users file path
@@ -144,6 +148,14 @@ class Config:
     def pending_dir(self) -> Path:
         """Get the pending messages directory."""
         return Path(self._config["PENDING_DIR"])
+
+    @property
+    def history_retention_days(self) -> int:
+        """Default retention window (days) for the history clear form."""
+        try:
+            return int(self._config["HISTORY_RETENTION_DAYS"])
+        except (TypeError, ValueError):
+            return 7
 
     @property
     def admin_password(self) -> str:

@@ -1,9 +1,12 @@
 {
   "users": {
     "tester": {
+      "allowed_projects": [
+        "AAA"
+      ],
       "enabled": true,
       "must_change_password": false,
-      "password_hash": "22e0654c0499bf2697ba0f3945c071be:f4591be10233869aedd36d31e9b87340fb48869af882ae7fd85f9ae0a8499aea"
+      "password_hash": "e84a4ee6a767a8839c03503509d5d84a:62116090d9e44211606395e9f84143a686ee0b09ef787fd8c2585b2ea2404c7f"
     }
   }
 }

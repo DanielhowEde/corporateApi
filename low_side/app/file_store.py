@@ -197,6 +197,108 @@ class FileStore:
         except OSError as e:
             raise FileStoreError(f"Failed to write error file: {e}") from e
 
+    def read_message(self, message_id: str, project: str) -> Dict[str, Any]:
+        """Read a stored message from disk."""
+        file_path = self._get_final_path(message_id, project)
+        if not file_path.exists():
+            raise FileStoreError(f"Message not found: {message_id}")
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise FileStoreError(f"Failed to read message: {e}") from e
+
+    def get_all_messages(
+        self,
+        project_filter: str = "",
+        search_query: str = "",
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return stored messages, newest first, optionally filtered.
+
+        Args:
+            project_filter: Only return messages from this project (if set)
+            search_query: Case-insensitive substring match on ID, TestID,
+                          Area, Status, Project
+            limit: Max number of messages to return
+        """
+        messages: List[Dict[str, Any]] = []
+        projects = [project_filter] if project_filter else self.list_projects()
+
+        for proj in projects:
+            project_dir = self.master_dir / proj
+            if not project_dir.exists():
+                continue
+            for f in project_dir.iterdir():
+                if not (f.is_file() and f.suffix == ".json"):
+                    continue
+                try:
+                    with open(f, "r", encoding="utf-8") as fh:
+                        msg = json.load(fh)
+                    msg["_file_mtime"] = f.stat().st_mtime
+                    messages.append(msg)
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+        if search_query:
+            q = search_query.lower()
+            messages = [
+                m
+                for m in messages
+                if q in m.get("ID", "").lower()
+                or q in m.get("TestID", "").lower()
+                or q in m.get("Area", "").lower()
+                or q in m.get("Status", "").lower()
+                or q in m.get("Project", "").lower()
+            ]
+
+        messages.sort(key=lambda m: m.get("_file_mtime", 0), reverse=True)
+        for m in messages:
+            m.pop("_file_mtime", None)
+
+        return messages[:limit]
+
+    def clear_messages(self, older_than_days: int = 0) -> int:
+        """
+        Delete stored message files.
+
+        Args:
+            older_than_days: If > 0, only delete files older than N days.
+                             If 0, delete everything.
+
+        Returns:
+            Number of files deleted.
+        """
+        import time
+
+        if not self.master_dir.exists():
+            return 0
+
+        cutoff = time.time() - (older_than_days * 86400) if older_than_days > 0 else None
+        deleted = 0
+
+        for project_dir in self.master_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            for f in project_dir.iterdir():
+                if not (f.is_file() and f.suffix == ".json"):
+                    continue
+                try:
+                    if cutoff is not None and f.stat().st_mtime >= cutoff:
+                        continue
+                    f.unlink()
+                    deleted += 1
+                except OSError:
+                    continue
+            try:
+                if not any(project_dir.iterdir()):
+                    project_dir.rmdir()
+            except OSError:
+                pass
+
+        return deleted
+
     def get_project_dir(self, project: str) -> Path:
         """
         Get the directory path for a specific project.

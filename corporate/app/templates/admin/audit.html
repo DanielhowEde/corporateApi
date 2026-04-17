@@ -1,0 +1,75 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Failed Login Attempts</h2>
+    <p class="text-muted" style="margin-bottom: 1rem;">
+        Central audit log. Events include failed logins on the corporate admin panel, the corporate user portal, and any failed attempts on the low-side (forwarded via the gateway). Up to the last 200 events across the past 14 days.
+    </p>
+
+    {% if events %}
+    <p class="text-muted" style="margin-bottom: 1rem;">
+        Showing <strong>{{ event_count }}</strong> event{% if event_count != 1 %}s{% endif %}.
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Source</th>
+                <th>Username</th>
+                <th>Reason</th>
+                <th>Request ID</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            <tr>
+                <td style="font-family: monospace; font-size: 0.85rem;">{{ event.timestamp[:19] }}</td>
+                <td>
+                    {% if event.source == 'corporate-admin' %}
+                    <span class="status-badge" style="background:#fed7d7; color:#822727;">Corporate Admin</span>
+                    {% elif event.source == 'corporate-user' %}
+                    <span class="status-badge" style="background:#bee3f8; color:#2a4365;">Corporate User</span>
+                    {% elif event.source == 'low-side' %}
+                    <span class="status-badge" style="background:#fefcbf; color:#744210;">Low-side</span>
+                    {% else %}
+                    <span class="status-badge">{{ event.source }}</span>
+                    {% endif %}
+                </td>
+                <td><strong>{{ event.username or '(empty)' }}</strong></td>
+                <td>
+                    {% if event.reason == 'bad_password' %}
+                    <span style="color:#c53030;">bad password</span>
+                    {% elif event.reason == 'user_not_found' %}
+                    <span style="color:#c53030;">user not found</span>
+                    {% elif event.reason == 'user_disabled' %}
+                    <span style="color:#c53030;">user disabled</span>
+                    {% elif event.reason == 'wrong_role' %}
+                    <span style="color:#c53030;">wrong role</span>
+                    {% else %}
+                    {{ event.reason }}
+                    {% endif %}
+                </td>
+                <td style="font-family: monospace; font-size: 0.8rem; color: #718096;">
+                    {{ event.request_id[:8] if event.request_id else '-' }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No failed login attempts recorded.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>About this log</h2>
+    <ul style="margin: 0.5rem 0 0 1.5rem; color: #718096;">
+        <li>Events are persisted as <code>.jsonl</code> files under <code>data/audit/failed_logins/</code>, one file per day</li>
+        <li>Corporate admin and user failures are recorded directly; low-side events arrive via the gateway</li>
+        <li>For forensic use, tail the JSONL files directly or ship them to your SIEM</li>
+        <li>Successful logins are not persisted here — only failures</li>
+    </ul>
+</div>
+{% endblock %}

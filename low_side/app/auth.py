@@ -10,9 +10,10 @@ Supports: login, session management, password change.
 import hashlib
 import json
 import os
+import re
 import secrets
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from .config import config
 from .utils import setup_logging
@@ -20,6 +21,34 @@ from .utils import setup_logging
 logger = setup_logging("low_side_auth")
 
 USERS_FILE_PATH = config.users_file_path
+
+
+# =============================================================================
+# Password policy (mirrors corporate)
+# =============================================================================
+
+PASSWORD_MIN_LENGTH = 12
+PASSWORD_POLICY_TEXT = (
+    f"Password must be at least {PASSWORD_MIN_LENGTH} characters and include "
+    "uppercase, lowercase, a digit, and a symbol."
+)
+
+_PASSWORD_CHECKS = [
+    (re.compile(r"[A-Z]"), "an uppercase letter"),
+    (re.compile(r"[a-z]"), "a lowercase letter"),
+    (re.compile(r"\d"), "a digit"),
+    (re.compile(r"[^A-Za-z0-9]"), "a symbol"),
+]
+
+
+def validate_password_strength(password: str) -> Tuple[bool, str]:
+    """Return (ok, reason) — True/empty-string when policy is met."""
+    if not password or len(password) < PASSWORD_MIN_LENGTH:
+        return False, f"Password must be at least {PASSWORD_MIN_LENGTH} characters"
+    missing = [desc for pattern, desc in _PASSWORD_CHECKS if not pattern.search(password)]
+    if missing:
+        return False, "Password must contain " + ", ".join(missing)
+    return True, ""
 
 # Active sessions: token -> {username, expiry}
 active_sessions: Dict[str, dict] = {}
@@ -108,15 +137,25 @@ def sync_user_from_corporate(user_data: dict) -> tuple[bool, str]:
             return True, f"User '{username}' deleted"
         return True, f"User '{username}' not found (already deleted)"
 
-    # upsert
+    # upsert — preserve existing allowed_projects if not in payload
+    allowed = user_data.get("allowed_projects")
+    if allowed is None:
+        allowed = users.get(username, {}).get("allowed_projects", [])
+    if not isinstance(allowed, list):
+        allowed = []
+    allowed = sorted({str(c).upper().strip() for c in allowed if str(c).strip()})
+
     users[username] = {
         "password_hash": user_data.get("password_hash", ""),
         "enabled": user_data.get("enabled", True),
         "must_change_password": user_data.get("must_change_password", True),
+        "allowed_projects": allowed,
         "synced": datetime.now().isoformat(),
     }
     _save_users(users)
-    logger.info(f"User upserted via sync: {username}")
+    logger.info(
+        f"User upserted via sync: {username} (allowed_projects={allowed})"
+    )
     return True, f"User '{username}' synced"
 
 
@@ -135,6 +174,19 @@ def verify_user_credentials(username: str, password: str) -> bool:
         logger.warning(f"Login attempt for disabled user: {username}")
         return False
     return _verify_password_hash(password, user.get("password_hash", ""))
+
+
+def classify_login_failure(username: str) -> str:
+    """
+    Classify why a login failed, for audit purposes.
+    Returns: user_not_found | user_disabled | bad_password
+    """
+    user = _load_users().get(username)
+    if not user:
+        return "user_not_found"
+    if not user.get("enabled", True):
+        return "user_disabled"
+    return "bad_password"
 
 
 def create_user_session(username: str) -> str:
@@ -174,8 +226,9 @@ def user_must_change_password(username: str) -> bool:
 
 def update_user_password(username: str, new_password: str) -> tuple[bool, str]:
     """Update a user's password and clear the must_change_password flag."""
-    if not new_password or len(new_password) < 6:
-        return False, "Password must be at least 6 characters"
+    ok, msg = validate_password_strength(new_password)
+    if not ok:
+        return False, msg
 
     users = _load_users()
     if username not in users:
@@ -189,3 +242,22 @@ def update_user_password(username: str, new_password: str) -> tuple[bool, str]:
         logger.info(f"Password updated for: {username}")
         return True, "Password updated successfully"
     return False, "Failed to save changes"
+
+
+# =============================================================================
+# Per-user project access control (synced from corporate)
+# =============================================================================
+
+
+def get_user_allowed_projects(username: str) -> list:
+    """Return the list of project codes this user is allowed to send to."""
+    user = _load_users().get(username, {})
+    allowed = user.get("allowed_projects", [])
+    if not isinstance(allowed, list):
+        return []
+    return [str(code).upper() for code in allowed if code]
+
+
+def user_can_send_to_project(username: str, project_code: str) -> bool:
+    """True iff this user has been explicitly granted the project code."""
+    return project_code.upper() in get_user_allowed_projects(username)

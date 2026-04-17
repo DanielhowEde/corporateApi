@@ -244,6 +244,7 @@
         <ul>
             <li><a href="/user/" {% if title == "User Portal" %}class="active"{% endif %}>Home</a></li>
             <li><a href="/user/send" {% if title == "Send Message" %}class="active"{% endif %}>Send Message</a></li>
+            <li><a href="/user/history" {% if title == "Message History" %}class="active"{% endif %}>History</a></li>
             <li><a href="/user/change-password" {% if title == "Change Password" %}class="active"{% endif %}>Change Password</a></li>
             <li style="margin-left: auto;"><a href="/user/logout">Logout{% if username %} ({{ username }}){% endif %}</a></li>
         </ul>

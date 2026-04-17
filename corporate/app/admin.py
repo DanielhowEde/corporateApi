@@ -20,6 +20,7 @@ from .config import config
 from .key_manager import KeyManager, KeyManagerError
 from .whitelist import ProjectWhitelist, WhitelistError
 from .utils import setup_logging
+from . import audit
 from . import auth
 
 logger = setup_logging("admin")
@@ -76,6 +77,7 @@ async def _sync_user(username: str, action: str = "upsert") -> None:
         "password_hash": user.get("password_hash", ""),
         "enabled": user.get("enabled", True),
         "must_change_password": user.get("must_change_password", True),
+        "allowed_projects": user.get("allowed_projects", []),
     }
     await gateway_client.sync_user(payload)
 
@@ -99,8 +101,9 @@ def require_admin_auth(session_token: Optional[str]) -> bool:
 async def admin_login_page(request: Request, error: str = ""):
     """Admin login page."""
     return templates.TemplateResponse(
+        request,
         "admin/login.html",
-        {"request": request, "title": "Admin Login", "error": error, **get_branding()},
+        {"title": "Admin Login", "error": error, **get_branding()},
     )
 
 
@@ -125,7 +128,10 @@ async def admin_login_submit(
         )
         return response
 
-    logger.warning(f"Failed admin login attempt: {username}")
+    reason = auth.classify_login_failure(username, role="admin")
+    audit.record_failed_login(
+        username=username, source="corporate-admin", reason=reason
+    )
     return RedirectResponse(
         url="/admin/login?error=Invalid+username+or+password",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -162,8 +168,9 @@ async def admin_dashboard(
         )
 
     return templates.TemplateResponse(
+        request,
         "admin/dashboard.html",
-        {"request": request, "title": "Admin Dashboard", **get_branding()},
+        {"title": "Admin Dashboard", **get_branding()},
     )
 
 
@@ -182,10 +189,9 @@ async def admin_projects(
 
     projects = whitelist.list_projects() if whitelist else []
     return templates.TemplateResponse(
+        request,
         "admin/projects.html",
-        {
-            "request": request,
-            "title": "Project Whitelist",
+        {"title": "Project Whitelist",
             "projects": projects,
             "message": message,
             "error": error,
@@ -300,6 +306,28 @@ async def admin_remove_project(
     )
 
 
+@router.get("/audit", response_class=HTMLResponse, name="admin_audit")
+async def admin_audit_page(
+    request: Request, admin_session: Optional[str] = Cookie(None)
+):
+    """Central audit log: recent failed login attempts across the estate."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    events = audit.list_recent_failed_logins(limit=200)
+    return templates.TemplateResponse(
+        request,
+        "admin/audit.html",
+        {"title": "Audit Log",
+            "events": events,
+            "event_count": len(events),
+            **get_branding(),
+        },
+    )
+
+
 @router.get("/certs", response_class=HTMLResponse, name="admin_certs")
 async def admin_certs(
     request: Request,
@@ -337,10 +365,9 @@ async def admin_certs(
     ]
 
     return templates.TemplateResponse(
+        request,
         "admin/certs.html",
-        {
-            "request": request,
-            "title": "Certificate Management",
+        {"title": "Certificate Management",
             "certs": certs,
             "message": message,
             "error": error,
@@ -371,15 +398,33 @@ async def admin_users(
     users = auth.list_users()
     admins = auth.list_admins()
 
-    return templates.TemplateResponse(
-        "admin/users.html",
+    # Augment each user tuple with their allowed_projects list so the
+    # template can render per-user project access controls.
+    users_with_projects = [
         {
-            "request": request,
-            "title": "User Management",
-            "users": users,
+            "username": username,
+            "enabled": enabled,
+            "created": created,
+            "allowed_projects": auth.get_user_allowed_projects(username),
+        }
+        for (username, enabled, created) in users
+    ]
+
+    # Full list of whitelist project codes (enabled or not) — admin may want
+    # to grant access to disabled ones in advance.
+    whitelist_projects = (
+        [code for code, _enabled in whitelist.list_projects()] if whitelist else []
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "admin/users.html",
+        {"title": "User Management",
+            "users": users_with_projects,
             "admins": admins,
-            "user_count": len(users),
+            "user_count": len(users_with_projects),
             "admin_count": len(admins),
+            "whitelist_projects": sorted(whitelist_projects),
             "message": message,
             "error": error,
             **get_branding(),
@@ -484,6 +529,34 @@ async def admin_delete_user(username: str, admin_session: Optional[str] = Cookie
         await gateway_client.sync_user(
             {"username": username, "action": "delete"}
         ) if gateway_client else None
+        return RedirectResponse(
+            url=f"/admin/users?message={message.replace(' ', '+')}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    return RedirectResponse(
+        url=f"/admin/users?error={message.replace(' ', '+')}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/users/{username}/projects", name="admin_set_user_projects")
+async def admin_set_user_projects(
+    username: str,
+    allowed: list[str] = Form(default=[]),
+    admin_session: Optional[str] = Cookie(None),
+):
+    """Replace the list of project codes this user may send to."""
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    success, message = auth.set_user_allowed_projects(username, allowed)
+
+    if success:
+        logger.info(f"Admin set allowed_projects for {username}: {allowed}")
+        await _sync_user(username, "upsert")
         return RedirectResponse(
             url=f"/admin/users?message={message.replace(' ', '+')}",
             status_code=status.HTTP_303_SEE_OTHER,
@@ -604,10 +677,9 @@ async def admin_keys(
 
     keys = key_manager.list_keys()
     return templates.TemplateResponse(
+        request,
         "admin/keys.html",
-        {
-            "request": request,
-            "title": "Key Management",
+        {"title": "Key Management",
             "keys": keys,
             "message": message,
             "error": error,
@@ -691,10 +763,9 @@ async def admin_view_public_key(
 
     keys = key_manager.list_keys()
     return templates.TemplateResponse(
+        request,
         "admin/keys.html",
-        {
-            "request": request,
-            "title": "Key Management",
+        {"title": "Key Management",
             "keys": keys,
             "message": "",
             "error": "",

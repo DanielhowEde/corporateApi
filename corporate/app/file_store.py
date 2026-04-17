@@ -199,6 +199,49 @@ class FileStore:
         except OSError as e:
             raise FileStoreError(f"Failed to write error file: {e}") from e
 
+    def clear_messages(self, older_than_days: int = 0) -> int:
+        """
+        Delete stored message files.
+
+        Args:
+            older_than_days: If > 0, only delete files whose mtime is older
+                             than this many days. If 0 (default), delete
+                             every message across every project.
+
+        Returns:
+            Number of files deleted.
+        """
+        import time
+
+        if not self.master_dir.exists():
+            return 0
+
+        cutoff = time.time() - (older_than_days * 86400) if older_than_days > 0 else None
+        deleted = 0
+
+        for project_dir in self.master_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            for f in project_dir.iterdir():
+                if not (f.is_file() and f.suffix == ".json"):
+                    continue
+                try:
+                    if cutoff is not None and f.stat().st_mtime >= cutoff:
+                        continue
+                    f.unlink()
+                    deleted += 1
+                except OSError:
+                    continue
+
+            # Remove now-empty project directories
+            try:
+                if not any(project_dir.iterdir()):
+                    project_dir.rmdir()
+            except OSError:
+                pass
+
+        return deleted
+
     def write_pending(
         self, message_data: Dict[str, Any], wrapped_data: Dict[str, Any]
     ) -> Path:

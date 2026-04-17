@@ -33,6 +33,7 @@ def configured_user_client(tmp_path, monkeypatch):
                 "password_hash": auth._hash_password("pw12345"),
                 "enabled": True,
                 "must_change_password": False,
+                "allowed_projects": ["AAA"],
             }
         }
     )

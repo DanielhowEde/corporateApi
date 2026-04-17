@@ -217,10 +217,46 @@ class TestReceiveEndpointFileWriting:
 class TestFileStoreErrorHandling:
     """Tests for FileStore error handling."""
 
+    def test_write_wraps_filesystem_error_as_FileStoreError(
+        self, tmp_path, valid_message
+    ):
+        """
+        write_message() must wrap any OS-level filesystem failure in
+        FileStoreError so callers have a single exception type to catch.
+
+        We force a real error by placing a regular file at the path where
+        FileStore expects to create the project directory
+        ({master_dir}/AAA). When write_message() calls
+        `.parent.mkdir(parents=True, exist_ok=True)` on that path, it
+        raises FileExistsError — which FileStore should wrap.
+
+        Works identically on Windows and POSIX.
+        """
+        master_dir = tmp_path / "messages"
+        tmp_dir = tmp_path / "tmp"
+        error_dir = tmp_path / "errors"
+
+        store = FileStore(
+            master_dir=str(master_dir),
+            tmp_dir=str(tmp_dir),
+            error_dir=str(error_dir),
+        )
+
+        # Place a file where FileStore wants a directory
+        project_blocker = master_dir / valid_message["Project"]
+        project_blocker.write_text("I am not a directory")
+
+        with pytest.raises(FileStoreError):
+            store.write_message(valid_message)
+
     def test_write_to_readonly_directory_raises_error(self, tmp_path, valid_message):
-        """Test that writing to read-only directory raises FileStoreError."""
+        """
+        POSIX-only: writing into a chmod 0o444 directory must raise
+        FileStoreError. Windows doesn't honour Unix-style dir perms so
+        this scenario is covered by the cross-platform test above instead.
+        """
         if os.name == "nt":
-            pytest.skip("Read-only directory semantics differ on Windows")
+            pytest.skip("Directory permission bits are POSIX-only")
 
         master_dir = tmp_path / "readonly"
         tmp_dir = tmp_path / "tmp"

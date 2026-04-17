@@ -1,0 +1,24 @@
+[tool.pytest.ini_options]
+# This repo contains two independent services (corporate/ and low_side/),
+# each with its own tests/ package. pytest cannot collect both at the
+# same time because both use the module name `tests.conftest`.
+#
+# Run each service's suite from its own directory:
+#   cd corporate && pytest
+#   cd low_side  && pytest
+#
+# The settings below tell pytest *not* to walk down into the service
+# directories from the repo root.
+norecursedirs = [
+    "corporate",
+    "low_side",
+    "mock_gateway",
+    "mock_cert_gateway",
+    ".cache",
+    "build",
+    "release",
+    "data",
+]
+# Top-level integration tests only (the file driven by the CI integration
+# stage). Leave testpaths unset here if you want collection to walk `tests/`.
+testpaths = ["tests"]

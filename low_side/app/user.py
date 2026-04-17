@@ -17,6 +17,7 @@ from fastapi import APIRouter, Cookie, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from .config import config
 from .utils import setup_logging
 from . import auth
 
@@ -27,14 +28,21 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 router = APIRouter(prefix="/user", tags=["User Portal"])
 
-# Gateway client (set by main.py)
+# Shared instances (set by main.py)
 gateway_client = None
+file_store = None
 
 
 def set_gateway_client(client) -> None:
     """Set the gateway client instance."""
     global gateway_client
     gateway_client = client
+
+
+def set_file_store(fs) -> None:
+    """Set the file store instance."""
+    global file_store
+    file_store = fs
 
 
 def _require_auth(session_token: Optional[str]) -> tuple:
@@ -60,10 +68,9 @@ def _require_auth(session_token: Optional[str]) -> tuple:
 async def login_page(request: Request, error: str = "", message: str = ""):
     """Login page."""
     return templates.TemplateResponse(
+        request,
         "user/login.html",
-        {
-            "request": request,
-            "title": "Login",
+        {"title": "Login",
             "error": error,
             "message": message,
         },
@@ -100,7 +107,16 @@ async def login_submit(
         )
         return response
 
-    logger.warning(f"Failed login attempt: {username}")
+    reason = auth.classify_login_failure(username)
+    logger.warning(f"Failed login attempt: {username} (reason={reason})")
+
+    # Forward the audit event to corporate (best-effort — never blocks login flow)
+    if gateway_client:
+        try:
+            await gateway_client.report_failed_login(username=username, reason=reason)
+        except Exception as e:
+            logger.warning(f"Could not report failed login to corporate: {e}")
+
     return RedirectResponse(
         url="/user/login?error=Invalid+username+or+password",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -143,10 +159,9 @@ async def change_password_page(
     is_required = required == "1" or auth.user_must_change_password(username)
 
     return templates.TemplateResponse(
+        request,
         "user/change_password.html",
-        {
-            "request": request,
-            "title": "Change Password",
+        {"title": "Change Password",
             "username": username,
             "is_required": is_required,
             "error": error,
@@ -222,10 +237,9 @@ async def home(
         )
 
     return templates.TemplateResponse(
+        request,
         "user/home.html",
-        {
-            "request": request,
-            "title": "User Portal",
+        {"title": "User Portal",
             "username": username,
             "message": message,
         },
@@ -253,14 +267,18 @@ async def send_message_page(
     default_id = str(uuid.uuid4())
     default_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
+    # Low-side has no global whitelist — the user's allowed_projects list
+    # (synced from corporate) is the sole source of truth.
+    allowed_projects = auth.get_user_allowed_projects(username)
+
     return templates.TemplateResponse(
+        request,
         "user/send_message.html",
-        {
-            "request": request,
-            "title": "Send Message",
+        {"title": "Send Message",
             "username": username,
             "default_id": default_id,
             "default_timestamp": default_timestamp,
+            "allowed_projects": allowed_projects,
             "message": message,
             "error": error,
         },
@@ -328,6 +346,16 @@ async def send_message_submit(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
+    # Per-user project access control (synced from corporate)
+    if not auth.user_can_send_to_project(username, validated_message.Project):
+        logger.warning(
+            f"User {username} not authorised for project {validated_message.Project}"
+        )
+        return RedirectResponse(
+            url=f"/user/send?error=You+are+not+authorised+to+send+to+{validated_message.Project}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
     if not gateway_client:
         return RedirectResponse(
             url="/user/send?error=Gateway+client+not+configured",
@@ -351,3 +379,97 @@ async def send_message_submit(
             url="/user/send?error=Gateway+rejected+the+message.",
             status_code=status.HTTP_303_SEE_OTHER,
         )
+
+
+# =============================================================================
+# Message History
+# =============================================================================
+
+
+@router.get("/history", response_class=HTMLResponse, name="ls_user_history")
+async def history_page(
+    request: Request,
+    project: str = "",
+    search: str = "",
+    page: int = 1,
+    message: str = "",
+    error: str = "",
+    session_token: Optional[str] = Cookie(None),
+):
+    """Low-side message history with filtering, search, and pagination (20 per page)."""
+    redirect, username = _require_auth(session_token)
+    if redirect:
+        return redirect
+
+    if auth.user_must_change_password(username):
+        return RedirectResponse(
+            url="/user/change-password?required=1",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    PER_PAGE = 20
+    all_messages = []
+    projects_list = []
+    if file_store:
+        all_messages = file_store.get_all_messages(
+            project_filter=project.upper().strip() if project else "",
+            search_query=search.strip() if search else "",
+            limit=10000,
+        )
+        projects_list = file_store.list_projects()
+
+    total = len(all_messages)
+    total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * PER_PAGE
+    messages_list = all_messages[start:start + PER_PAGE]
+
+    return templates.TemplateResponse(
+        request,
+        "user/history.html",
+        {"title": "Message History",
+            "username": username,
+            "messages": messages_list,
+            "projects": sorted(set(projects_list)),
+            "current_project": project,
+            "current_search": search,
+            "message_count": total,
+            "page": page,
+            "total_pages": total_pages,
+            "per_page": PER_PAGE,
+            "page_start": start + 1 if messages_list else 0,
+            "page_end": start + len(messages_list),
+            "retention_days": config.history_retention_days,
+            "message": message,
+            "error": error,
+        },
+    )
+
+
+@router.post("/history/clear", name="ls_user_history_clear")
+async def history_clear(
+    request: Request,
+    older_than_days: int = Form(0),
+    session_token: Optional[str] = Cookie(None),
+):
+    """Delete stored history messages older than N days (0 = all)."""
+    redirect, username = _require_auth(session_token)
+    if redirect:
+        return redirect
+
+    if not file_store:
+        return RedirectResponse(
+            url="/user/history?error=Service+not+configured",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    days = max(0, int(older_than_days))
+    deleted = file_store.clear_messages(older_than_days=days)
+    scope = "all" if days == 0 else f"older+than+{days}+day(s)"
+    logger.info(
+        f"User {username} cleared history: older_than_days={days}, deleted={deleted}"
+    )
+    return RedirectResponse(
+        url=f"/user/history?message=Cleared+{deleted}+message(s)+({scope})",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )

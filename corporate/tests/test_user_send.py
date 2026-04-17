@@ -39,6 +39,7 @@ def configured_user_client(tmp_path, monkeypatch):
                 "enabled": True,
                 "must_change_password": False,
                 "role": "user",
+                "allowed_projects": ["AAA"],
             }
         }
     )
