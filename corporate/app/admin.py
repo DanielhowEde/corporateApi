@@ -844,6 +844,122 @@ async def admin_sync_client_cert(
     )
 
 
+@router.get("/ca/regenerate", response_class=HTMLResponse, name="admin_ca_regenerate_form")
+async def admin_ca_regenerate_form(
+    request: Request,
+    error: str = "",
+    admin_session: Optional[str] = Cookie(None),
+):
+    """
+    Show the CA regeneration form — full subject fields pre-filled with
+    the existing CA's values so the admin can adjust just what they need.
+    """
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    current = key_manager.get_ca_info() or {}
+    return templates.TemplateResponse(
+        request,
+        "admin/ca_regenerate.html",
+        {
+            "title": "Regenerate Certificate Authority",
+            "current": current,
+            "defaults": key_manager.DEFAULT_CA_SUBJECT,
+            "existing_key_count": len(key_manager.list_keys()),
+            "error": error,
+            **get_branding(),
+        },
+    )
+
+
+@router.post("/ca/regenerate", name="admin_ca_regenerate")
+async def admin_ca_regenerate_submit(
+    request: Request,
+    common_name: str = Form(...),
+    organization: str = Form(""),
+    organizational_unit: str = Form(""),
+    country: str = Form(""),
+    state_province: str = Form(""),
+    locality: str = Form(""),
+    email: str = Form(""),
+    validity_days: int = Form(3650),
+    key_size: int = Form(4096),
+    confirm: str = Form(""),
+    admin_session: Optional[str] = Cookie(None),
+):
+    """
+    Archive the current CA, mint a new one from the submitted fields,
+    mark all existing client certs as orphaned, and sync the new CA
+    to low-side.
+
+    The `confirm=yes` guard exists because this invalidates every
+    issued client cert.
+    """
+    if not require_admin_auth(admin_session):
+        return RedirectResponse(
+            url="/admin/login", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    if confirm != "yes":
+        return RedirectResponse(
+            url="/admin/ca/regenerate?error=You+must+tick+the+confirmation+box",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    # 2-letter country code sanity check
+    country = country.strip().upper()
+    if country and len(country) != 2:
+        return RedirectResponse(
+            url="/admin/ca/regenerate?error=Country+must+be+a+2-letter+ISO+code",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    subject_fields = {
+        "common_name": common_name.strip(),
+        "organization": organization.strip(),
+        "organizational_unit": organizational_unit.strip(),
+        "country": country,
+        "state_province": state_province.strip(),
+        "locality": locality.strip(),
+        "email": email.strip(),
+    }
+
+    try:
+        result = key_manager.regenerate_ca(
+            subject_fields=subject_fields,
+            validity_days=validity_days,
+            key_size=key_size,
+        )
+    except KeyManagerError as e:
+        logger.error(f"CA regeneration failed: {e}")
+        return RedirectResponse(
+            url=f"/admin/ca/regenerate?error={str(e)[:120].replace(' ', '+')}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    logger.info(
+        f"Admin regenerated CA: archived={result['archived_path']}, "
+        f"orphaned={result['orphaned_keys']}"
+    )
+
+    # Best-effort: push the new CA to low-side
+    if gateway_client:
+        ca_pem = key_manager.get_ca_cert_pem()
+        if ca_pem:
+            await gateway_client.sync_ca(ca_pem)
+
+    msg = (
+        f"CA+regenerated+successfully.+{result['orphaned_keys']}+existing+"
+        f"client+cert(s)+marked+orphaned.+New+CA+pushed+to+low-side."
+    )
+    return RedirectResponse(
+        url=f"/admin/keys?message={msg}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 @router.get("/keys/ca.crt", name="admin_download_ca")
 async def admin_download_ca(admin_session: Optional[str] = Cookie(None)):
     """Download the CA certificate (public, safe to distribute)."""

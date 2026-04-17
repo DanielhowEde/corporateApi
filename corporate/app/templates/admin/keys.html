@@ -16,7 +16,7 @@
         certificate signed by this CA — use it for mTLS authentication against
         services that trust <code>ca.crt</code>.
     </p>
-    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
         <a href="/admin/keys/ca.crt" class="btn btn-primary">
             Download CA Certificate (ca.crt)
         </a>
@@ -25,6 +25,10 @@
                 Sync CA to Low-Side
             </button>
         </form>
+        <a href="/admin/ca/regenerate" class="btn btn-danger"
+           title="Replace the CA with a new key/subject. Invalidates existing client certs.">
+            Regenerate CA
+        </a>
     </div>
 </div>
 
@@ -75,6 +79,9 @@
                     <span class="status-badge status-enabled">Active</span>
                     {% elif key.status == 'revoked' %}
                     <span class="status-badge status-disabled">Revoked</span>
+                    {% elif key.status == 'orphaned' %}
+                    <span class="status-badge" style="background:#fed7d7; color:#822727;"
+                          title="Signed by a retired CA — no longer trusted. Regenerate this key to fix.">Orphaned</span>
                     {% else %}
                     <span class="status-badge">{{ key.status }}</span>
                     {% endif %}

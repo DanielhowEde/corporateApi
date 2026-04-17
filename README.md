@@ -62,7 +62,12 @@ repo/
 
 ## Message Schema
 
-Both services use the same message schema:
+Both the corporate and low-side services use the **same strict schema**. Any deviation is rejected with a generic `400 Invalid request` and the details are logged server-side under the request's `X-Request-ID`.
+
+- Formal spec: [`api-contracts/corporate-api.yaml`](api-contracts/corporate-api.yaml) and [`api-contracts/low-side-api.yaml`](api-contracts/low-side-api.yaml) (OpenAPI 3.1.0)
+- Python implementation: [`corporate/app/models.py`](corporate/app/models.py) and [`low_side/app/models.py`](low_side/app/models.py)
+
+### Valid example
 
 ```json
 {
@@ -79,18 +84,225 @@ Both services use the same message schema:
 }
 ```
 
-### Validation Rules
+### Field reference
 
-| Field | Rule |
-|-------|------|
-| ID | Valid UUID |
-| Project | Exactly 3 uppercase alphanumeric characters (`^[A-Z0-9]{3}$`) |
-| TestID | 3-10 characters |
-| Area | 3-64 characters |
-| Date | ISO 8601 datetime (e.g. `2026-01-30T11:22:33`) |
-| Status | Free text |
-| Data | Object with string values only; max 20 entries; values 1-128 chars; allowed chars: `a-z A-Z 0-9 space ;` |
-| Top-level | No extra fields allowed (strict schema) |
+| Field | Type | Required | Constraints | Example |
+|-------|------|----------|-------------|---------|
+| `ID` | string | ✓ | Valid UUID v4 | `550e8400-e29b-41d4-a716-446655440000` |
+| `Project` | string | ✓ | Exactly 3 chars, pattern `^[A-Z0-9]{3}$` (uppercase + digits only). Must be whitelisted on corporate. | `AAA`, `B12`, `X9Z` |
+| `TestID` | string | ✓ | 3–10 characters | `TST001`, `AAA-1112` |
+| `Area` | string | ✓ | 3–64 characters | `Integration`, `Smoke Tests` |
+| `Date` | string | ✓ | ISO 8601 datetime (`YYYY-MM-DDTHH:MM:SS`, optional timezone suffix) | `2026-01-30T11:22:33` |
+| `Status` | string | ✓ | Free text | `Inprogress`, `Complete`, `Fail` |
+| `Data` | object | ✓ | See **Data constraints** below | `{"result": "pass"}` |
+
+### `Data` constraints
+
+The `Data` object is **string-to-string only** — it's deliberately narrow to keep payloads safe and indexable.
+
+| Rule | Limit |
+|------|-------|
+| Maximum properties (keys) | 20 |
+| Value type | string only — no nested objects, arrays, numbers, booleans, or nulls |
+| Value length | 1–128 characters per value |
+| Allowed characters in values | `a–z`, `A–Z`, `0–9`, space, semicolon |
+
+### Top-level strictness
+
+Both Pydantic models use `extra="forbid"`. Any key that isn't one of the seven above causes a validation failure — **even if the rest of the message is valid**. This catches schema drift early.
+
+### Common rejection cases
+
+Each of these returns `400 Invalid request`:
+
+```json
+// ID isn't a UUID
+{"ID": "not-a-uuid", "Project": "AAA", ...}
+
+// Project wrong shape
+{"Project": "aa", ...}        // too short + lowercase
+{"Project": "A-B", ...}       // forbidden character
+
+// Date in legacy ddMMyyyy format (pre-schema-alignment)
+{"Date": "30012026T11:22:33", ...}
+
+// Data value isn't a string
+{"Data": {"count": 42}, ...}
+
+// Data value has a forbidden character
+{"Data": {"note": "hello, world"}, ...}  // comma not allowed
+
+// Extra top-level field
+{"ID": "...", "Project": "AAA", ..., "ExtraField": "nope"}
+```
+
+### End-to-end message flow
+
+```
+User portal (corporate)
+    │
+    │  POST /user/send (HTML form)
+    ▼
+Corporate /messages
+    │
+    │  1. Pydantic validation (schema)
+    │  2. Whitelist check (project)
+    │  3. Per-user project access check
+    │  4. Cert wrap via CERT_GATEWAY_URL → returns JWT envelope
+    │
+    ▼
+DMZ Gateway  (POST /messages)
+    │
+    │  - Verifies JWT (production)
+    │  - Unwraps envelope
+    │
+    ├────────────────────┐
+    ▼                    ▼
+Low-side              Corporate
+/dmz/messages         /dmz/messages
+    │                    │
+    │  Schema + whitelist │  Schema + whitelist
+    ▼                    ▼
+data/messages/{Project}/{ID}.json
+```
+
+Low-side sends using the same schema via `POST /messages`, minus the cert-wrap step (low-side has no cert gateway configured).
+
+## DMZ Sync Payload Schemas
+
+Besides the test-message schema above, the system exchanges several other JSON payloads across the DMZ boundary via the gateway. These are **best-effort sync events**: corporate is the source of truth, the gateway relays the event, and low-side (or corporate itself, for the audit sink) persists it. Failures log a warning but never block the triggering operation (login, key generation, etc.).
+
+All endpoint bodies use `application/json`. Unlike the message schema, these payloads don't use `extra="forbid"` — additional keys are ignored, which lets the shapes evolve without breaking older peers.
+
+### User sync
+
+Corporate admin creates / updates / disables / deletes a user → `gateway_client.sync_user()` → `POST /users` on the gateway → gateway forwards to `POST /dmz/users` on low-side.
+
+```json
+{
+  "username": "jsmith",
+  "action": "upsert",
+  "password_hash": "a1b2c3d4...:9f8e7d6c...",
+  "enabled": true,
+  "must_change_password": true,
+  "allowed_projects": ["AAA", "BBB"]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `username` | string | Required. Identifier used on both sides. |
+| `action` | string | `upsert` creates/updates, `delete` removes the user on low-side. |
+| `password_hash` | string | Already-hashed value from corporate. **Plaintext passwords never cross the wire.** Salted SHA-256 in the format `salt:hash`. |
+| `enabled` | boolean | Login allowed when true. |
+| `must_change_password` | boolean | User is forced through the change-password flow on next login. |
+| `allowed_projects` | array[string] | Empty = user cannot send anywhere. Codes are uppercased and deduped on receipt. Omitting the key on a partial update **preserves** the existing list. |
+
+The receiver ([`low_side/app/auth.py::sync_user_from_corporate`](low_side/app/auth.py)) normalises codes to uppercase and drops blanks.
+
+### CA certificate sync
+
+Corporate acts as its own CA. When an admin generates the first key pair, the CA cert is pushed to low-side so client certs signed by it are trusted for mTLS.
+
+`POST /ca` (gateway) → `POST /dmz/ca` (low-side)
+
+```json
+{
+  "ca_pem": "-----BEGIN CERTIFICATE-----\nMIIFrT...== \n-----END CERTIFICATE-----\n"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ca_pem` | string | PEM-encoded X.509 root certificate. Low-side rejects the payload if the string doesn't contain `BEGIN CERTIFICATE`. **Private key never crosses the wire.** |
+
+The CA cert is saved at `{data_dir}/keys/ca.crt` on low-side and can then be loaded by uvicorn via `--ssl-ca-certs` to authenticate incoming mTLS clients.
+
+### Client certificate sync
+
+Each time corporate admin issues a client cert from `/admin/keys`, the public cert is pushed to low-side as an allowlist entry. Revokes and deletes also fire through this channel.
+
+`POST /client-certs` (gateway) → `POST /dmz/client-certs` (low-side)
+
+```json
+{
+  "key_id": "8a3b2c1d-...",
+  "name": "postman-dev",
+  "cert_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "action": "upsert"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `key_id` | string | UUID generated by the key manager. Required. |
+| `name` | string | Human-readable label (also used as the cert CN). |
+| `cert_pem` | string | PEM-encoded X.509 client certificate. **No private key is ever sent.** Ignored when `action == "delete"`. |
+| `action` | string | `upsert` (default), `revoke`, or `delete`. |
+
+Stored on low-side at `{data_dir}/keys/clients/{key_id}.json` with a `status` of `active` or `revoked`.
+
+### Failed-login audit event
+
+Low-side is the only side that forwards — corporate is the central sink and writes its own audit events directly.
+
+Low-side login failure → `gateway_client.report_failed_login()` → `POST /audit/failed-login` (gateway) → `POST /dmz/audit/failed-login` (corporate).
+
+```json
+{
+  "username": "jsmith",
+  "reason": "bad_password",
+  "source": "low-side",
+  "timestamp": "2026-04-17T09:22:33.117294"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `username` | string | What was typed — may not exist as an account. |
+| `reason` | string | One of `bad_password`, `user_not_found`, `user_disabled`, `wrong_role`, or any future classifier. |
+| `source` | string | `corporate-admin`, `corporate-user`, or `low-side`. Unknown values are stored as `unknown`. |
+| `timestamp` | string | ISO 8601 datetime of the original attempt, preserved through the forward so the event reflects when it *happened* rather than when it was received. |
+
+Persisted as JSONL lines in `{data_dir}/audit/failed_logins/{YYYY-MM-DD}.jsonl` on corporate. Visible in the admin **Audit Log** page at `/admin/audit`.
+
+### Certificate gateway envelope (JWT wrap)
+
+Corporate wraps every outbound message with the external certificate gateway before it leaves the premises. The envelope is what travels over the wire to the DMZ Gateway.
+
+`POST /wrap` on the cert gateway returns:
+
+```json
+{
+  "token": "eyJhbGciOiJSUzI1NiJ9.<payload>.<signature>",
+  "expires_at": "2026-04-17T09:27:33+00:00",
+  "message": {
+    "ID": "550e8400-e29b-41d4-a716-446655440000",
+    "Project": "AAA",
+    "TestID": "AAA-1112",
+    "Area": "Area Name",
+    "Date": "2026-01-30T11:22:33",
+    "Status": "Inprogress",
+    "Data": {"result": "pass"}
+  }
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `token` | string | Signed JWT whose claims include the message. The DMZ Gateway verifies this before forwarding. |
+| `expires_at` | string | ISO 8601 with timezone. The gateway should reject any envelope where `now >= expires_at`. The mock uses a 5-minute validity window. |
+| `message` | object | The original validated message — **identical** to the schema above. Mock gateways / proxies unwrap this before sending to `/dmz/messages`. |
+
+### Endpoint summary
+
+| Path (gateway) | Forwarded to | Purpose | Source |
+|---|---|---|---|
+| `POST /messages` | `POST /dmz/messages` (both sides) | Test message exchange | corporate or low-side |
+| `POST /users` | `POST /dmz/users` (low-side) | User sync | corporate admin |
+| `POST /ca` | `POST /dmz/ca` (low-side) | CA cert publish | corporate admin |
+| `POST /client-certs` | `POST /dmz/client-certs` (low-side) | Client cert sync | corporate admin |
+| `POST /audit/failed-login` | `POST /dmz/audit/failed-login` (corporate) | Failed-login event | low-side user portal |
 
 ## API Endpoints
 
@@ -856,126 +1068,6 @@ Pending messages are stored in `./data/pending/{message_id}.json`.
 Mocks that need creating - mock to create the wrapper JWT cert
 Mock Gateway 
 Update Configuration to point at the Gateway
-
-## Pipeline stages
-
-1. Prepare & Setup
-2. Linting & Validation
-3. Unit Tests
-4. Build
-5. Static Analysis
-6. Dependency Analysis
-7. Integration Tests
-8. Package / Publish
-
-## Prepare & Setup
-### Purpose
-- Set up environment
-- validate pipeline inputs
-- Restore caches
-
-## Minimum requirements
-
-- validate configuration files
-- Load secrets securely
-- Configure caches
-
-## Linting & Validation 
-- Code linting
-- Formatting checks
-- Configuration validation
-
-## Unit Test
-### Purpose
-
-- run on every Commit
-- fast and isolated
-- No external dependencies
-
-## Build Stage 
-- Compile or package the application
-- Produce deterministic build artifacts
-
-### Requirements
-- Builds must be reproducible
-- Dependencies version must be pinned
-- Build artifacts must be stored as pipeline artifacts
-
-## Static Analysis Stage 
-### Purpose
-- Detect code smells, bugs and maintainability issues
-
-### Requirements
-- Must run on every merge request
-- Must block merge on critical issues
-- Results must be visible n Gitlab
-
-SonarQube (preferred Example)
- - Use SonarQube or equivalent
- - enforce quality gates
-
-## Dependency Analysis
-
-- Identify vulnerable or con- compliant dependencies
-- Support OSS governance and licence compliance
-
-### Python 
- - pip-audit
- - safety
- - Lock file validation
-
-### Node.js
-- npm audit /yarn audit
-- Lock file enforcement
-
-### Requirements
-- High and Critical vulnerabilities must fail the pipeline
-- Accepted risks must be documented
-
-## Testing Stage
-### Integration Tests
- - Validate component interation
- - May use test containers or mocks
- - Run at least on merge requests
-
-### System / End-to-End Tests
- - Validate full system behaviour
- - May run less frequently due to cost
- - Required before production deployment
-
-### Code Coverage 
- - Coverage must be reported
- - Minimum thresholds should be defined per project
- - Drops in coverage must be visible
-
-## Package / Publish stage
-
-- Publish build artifacts or Images
-
-### requirements
-- Version artifacts consistently
-- Never overwrite release versions
-
-## GitLab CI Best Practices
-- .gitlab-ci.yml is version controlled
-- Changes reviewed via merge requests
-
-### Resusable Pipelines
- - use include and templates
- - avoid copy-past across repositories
- 
-### Secret Management
-- Never store secrets in git
-- Use GitLab CI variables or secret managers
-- Mask and protect sensitive varables
-
-# Updating Service Addresses
-There are three ways to set addresses, in priority order (highest wins):
-
-Option 1: Environment variables (recommended for deployment)
-Set these before starting the service:
-
-Windows (cmd):
 
 
 set GATEWAY_URL=https://gateway.prod.example.com

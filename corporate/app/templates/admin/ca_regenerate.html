@@ -1,0 +1,151 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card" style="border-left: 4px solid #e53e3e;">
+    <h2 style="color:#c53030;">⚠  This is a destructive action</h2>
+    <p style="margin-bottom:0.75rem;">
+        Regenerating the Certificate Authority will:
+    </p>
+    <ul style="margin: 0.25rem 0 0.75rem 1.5rem;">
+        <li><strong>Invalidate every one of the {{ existing_key_count }} client certificate(s) currently issued.</strong>
+            They were signed by the old CA and will stop working against any service that trusts only the new CA.</li>
+        <li>Archive the current CA to <code>data/keys/_ca.archived.&lt;timestamp&gt;/</code> — it is <strong>not</strong> deleted
+            and can still decrypt anything it previously signed.</li>
+        <li>Push the new CA to low-side via the gateway. Low-side's uvicorn trust store will pick it up on next restart
+            with the appropriate <code>--ssl-ca-certs</code> flag.</li>
+        <li>Mark every existing key pair's metadata with <code>status: orphaned</code>. Until you re-issue them,
+            <strong>no client will be able to authenticate via mTLS.</strong></li>
+    </ul>
+    <p class="text-muted">
+        Recommended only if you're renaming the CA's identity (e.g. after a company rebrand) or rotating a suspected-compromised CA key.
+    </p>
+</div>
+
+{% if current %}
+<div class="card">
+    <h2>Current CA</h2>
+    <table style="width:100%;">
+        <tr><td style="width:220px;"><strong>Common Name</strong></td><td>{{ current.common_name or '—' }}</td></tr>
+        <tr><td><strong>Organization</strong></td><td>{{ current.organization or '—' }}</td></tr>
+        <tr><td><strong>Organizational Unit</strong></td><td>{{ current.organizational_unit or '—' }}</td></tr>
+        <tr><td><strong>Country</strong></td><td>{{ current.country or '—' }}</td></tr>
+        <tr><td><strong>State / Province</strong></td><td>{{ current.state_province or '—' }}</td></tr>
+        <tr><td><strong>Locality</strong></td><td>{{ current.locality or '—' }}</td></tr>
+        <tr><td><strong>Email</strong></td><td>{{ current.email or '—' }}</td></tr>
+        <tr><td><strong>Valid from</strong></td><td>{{ current.not_valid_before[:19] }}</td></tr>
+        <tr><td><strong>Valid until</strong></td><td>{{ current.not_valid_after[:19] }}</td></tr>
+        <tr><td><strong>Serial</strong></td><td><code style="font-size:0.8rem;">{{ current.serial_number }}</code></td></tr>
+        <tr><td><strong>SHA-256 Fingerprint</strong></td>
+            <td><code style="font-size:0.8rem;">{{ current.fingerprint_sha256 }}</code></td></tr>
+    </table>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>New CA details</h2>
+    <p class="text-muted" style="margin-bottom:1rem;">
+        Fill in the subject fields for the replacement CA. Only <strong>Common Name</strong> is required; all other
+        fields are optional but recommended for production CAs.
+    </p>
+
+    <form action="/admin/ca/regenerate" method="post" onsubmit="return window.confirm('This will invalidate {{ existing_key_count }} client cert(s). Are you absolutely sure?');">
+
+        <div class="form-group">
+            <label for="common_name">Common Name (CN) <span style="color:#c53030;">*</span></label>
+            <input type="text" id="common_name" name="common_name" class="form-control"
+                   value="{{ current.common_name or defaults.common_name }}"
+                   placeholder="e.g. Acme Corp Internal CA"
+                   required maxlength="64">
+            <p class="form-help">The canonical name of this CA. Shows up as the <code>Issuer</code> on every issued cert.</p>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="organization">Organization (O)</label>
+                <input type="text" id="organization" name="organization" class="form-control"
+                       value="{{ current.organization or defaults.organization }}"
+                       placeholder="e.g. Acme Corp"
+                       maxlength="64">
+            </div>
+
+            <div class="form-group">
+                <label for="organizational_unit">Organizational Unit (OU)</label>
+                <input type="text" id="organizational_unit" name="organizational_unit" class="form-control"
+                       value="{{ current.organizational_unit }}"
+                       placeholder="e.g. DMZ PKI"
+                       maxlength="64">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="country">Country (C)</label>
+                <input type="text" id="country" name="country" class="form-control"
+                       value="{{ current.country }}"
+                       placeholder="2-letter ISO (GB, US, DE...)"
+                       maxlength="2"
+                       style="text-transform:uppercase;">
+                <p class="form-help">2-letter ISO 3166 code, uppercase.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="state_province">State / Province (ST)</label>
+                <input type="text" id="state_province" name="state_province" class="form-control"
+                       value="{{ current.state_province }}"
+                       maxlength="64">
+            </div>
+
+            <div class="form-group">
+                <label for="locality">Locality / City (L)</label>
+                <input type="text" id="locality" name="locality" class="form-control"
+                       value="{{ current.locality }}"
+                       maxlength="64">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email Address</label>
+            <input type="email" id="email" name="email" class="form-control"
+                   value="{{ current.email }}"
+                   placeholder="e.g. pki@example.com"
+                   maxlength="128">
+            <p class="form-help">Optional. Embedded in the cert subject as <code>emailAddress</code>.</p>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="validity_days">Validity (days)</label>
+                <input type="number" id="validity_days" name="validity_days" class="form-control"
+                       value="3650" min="1" max="18250" required>
+                <p class="form-help">How long before the CA itself expires. Default 3650 (10 years).</p>
+            </div>
+
+            <div class="form-group">
+                <label for="key_size">Key size</label>
+                <select id="key_size" name="key_size" class="form-control">
+                    <option value="2048">RSA 2048-bit</option>
+                    <option value="4096" selected>RSA 4096-bit (recommended for CAs)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group" style="background:#fef5e7; border:1px solid #f5c16c; padding:1rem; border-radius:4px;">
+            <div class="form-check">
+                <input type="checkbox" id="confirm" name="confirm" value="yes" required>
+                <label for="confirm" style="margin:0;">
+                    <strong>I understand this will invalidate {{ existing_key_count }} existing client certificate(s) and that this cannot be undone without manually restoring the archived CA.</strong>
+                </label>
+            </div>
+        </div>
+
+        <div style="display:flex; gap:0.5rem;">
+            <button type="submit" class="btn btn-danger">Regenerate CA</button>
+            <a href="/admin/keys" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
