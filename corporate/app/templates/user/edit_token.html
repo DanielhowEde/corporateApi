@@ -1,0 +1,148 @@
+{% extends "user/base.html" %}
+
+{% block content %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card" style="border-left: 4px solid #f59e0b;">
+    <h2>Edit JWT Token</h2>
+    <p class="text-muted" style="margin-bottom: 0.5rem;">
+        Modify the cert-gateway-issued JWT on this pending message. The edited envelope is stored back
+        to the pending record — clicking <strong>Send Now</strong> on the queue afterwards will forward
+        exactly what you see here to the DMZ gateway.
+    </p>
+    <p class="text-muted">
+        This is a testing tool: use it to feed expired, tampered, or otherwise invalid tokens
+        to the gateway and observe how it responds.
+    </p>
+</div>
+
+<div class="card">
+    <h2>Message being signed</h2>
+    <table style="width: 100%; font-size: 0.9rem;">
+        <tr><td style="width: 160px;"><strong>Message ID</strong></td>
+            <td style="font-family: monospace;">{{ message_id }}</td></tr>
+        <tr><td><strong>Project</strong></td><td>{{ message_inner.Project }}</td></tr>
+        <tr><td><strong>TestID</strong></td><td>{{ message_inner.get("TestID", "") }}</td></tr>
+        <tr><td><strong>Date</strong></td><td>{{ message_inner.get("Date", "") }}</td></tr>
+        <tr><td><strong>Status</strong></td><td>{{ message_inner.get("Status", "") }}</td></tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>JWT Envelope</h2>
+    <form action="/user/pending/{{ message_id }}/edit-token" method="post">
+        <div class="form-group">
+            <label for="token">Token <span class="text-muted" style="font-weight: normal;">(the JWT as a single string)</span></label>
+            <textarea id="token" name="token" class="form-control" required rows="6"
+                      style="font-family: monospace; font-size: 0.85rem;">{{ token }}</textarea>
+            <p class="form-help">
+                Format is typically <code>header.payload.signature</code>. Edit any of the three
+                segments (or mangle them entirely) to test how the downstream gateway handles
+                malformed or tampered tokens.
+            </p>
+        </div>
+
+        <div class="form-group">
+            <label for="expires_at">Expires at <span class="text-muted" style="font-weight: normal;">(ISO 8601)</span></label>
+            <input type="text" id="expires_at" name="expires_at" class="form-control"
+                   value="{{ expires_at }}"
+                   placeholder="e.g. 2026-01-30T11:22:33+00:00">
+            <p class="form-help">
+                Leave unchanged to keep the current expiry, or set to a past timestamp to test
+                expired-token behaviour. Helper buttons below fill this for you.
+            </p>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        onclick="setExpiry('2000-01-01T00:00:00+00:00')">Force expired (year 2000)</button>
+                <button type="button" class="btn btn-secondary btn-sm"
+                        onclick="setExpiry(isoOffset(-60))">Expired 1 hour ago</button>
+                <button type="button" class="btn btn-secondary btn-sm"
+                        onclick="setExpiry(isoOffset(60))">Valid for 1 hour</button>
+                <button type="button" class="btn btn-secondary btn-sm"
+                        onclick="setExpiry(isoOffset(60 * 24 * 30))">Valid for 30 days</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Token helpers</label>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="flipSignature()">
+                    Corrupt signature
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="truncateToken()">
+                    Truncate token
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="clearToken()">
+                    Clear entirely
+                </button>
+            </div>
+            <p class="form-help">
+                These just modify the text in the token box — they don't save until you click Save.
+            </p>
+        </div>
+
+        <div style="display: flex; gap: 0.5rem;">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="/user/pending" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+{% if token_edits %}
+<div class="card">
+    <h2>Edit history</h2>
+    <table style="width: 100%; font-size: 0.85rem;">
+        <thead>
+            <tr>
+                <th style="padding: 0.5rem; text-align: left;">When</th>
+                <th style="padding: 0.5rem; text-align: left;">New expires_at</th>
+                <th style="padding: 0.5rem; text-align: left;">Token prefix</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for edit in token_edits | reverse %}
+            <tr style="border-top: 1px solid #f3f4f6;">
+                <td style="padding: 0.5rem;">{{ edit.edited_at[:19] }}</td>
+                <td style="padding: 0.5rem; font-family: monospace;">{{ edit.new_expires_at or "—" }}</td>
+                <td style="padding: 0.5rem; font-family: monospace; color: #6b7280;">{{ edit.token_prefix }}...</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<script>
+function setExpiry(iso) {
+    document.getElementById('expires_at').value = iso;
+}
+
+function isoOffset(minutes) {
+    const d = new Date(Date.now() + minutes * 60 * 1000);
+    return d.toISOString().replace(/\.\d+Z$/, '+00:00');
+}
+
+function flipSignature() {
+    const el = document.getElementById('token');
+    const parts = el.value.split('.');
+    if (parts.length < 3) { return; }
+    parts[2] = parts[2].split('').reverse().join('') + 'CORRUPT';
+    el.value = parts.join('.');
+}
+
+function truncateToken() {
+    const el = document.getElementById('token');
+    el.value = el.value.slice(0, Math.max(10, Math.floor(el.value.length / 2)));
+}
+
+function clearToken() {
+    document.getElementById('token').value = '';
+}
+</script>
+{% endblock %}

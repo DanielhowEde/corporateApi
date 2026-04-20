@@ -11,9 +11,10 @@ Assumes the following services are running on localhost:
 Exits non-zero on any failure so CI fails cleanly, but continues past a
 failed test so the full report shows every break at once.
 """
+
 import sys
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import httpx
 
@@ -96,7 +97,7 @@ def test_audit_failed_login_forwarded_to_corporate() -> None:
         "username": f"itester-{uuid.uuid4().hex[:6]}",
         "reason": "bad_password",
         "source": "low-side",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     r = httpx.post(f"{GATEWAY}/audit/failed-login", json=payload, timeout=10)
     assert r.status_code == 200, f"gateway returned {r.status_code}: {r.text}"

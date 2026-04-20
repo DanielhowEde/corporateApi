@@ -23,7 +23,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .config import config
 from .utils import get_request_id, setup_logging
@@ -48,9 +48,9 @@ def record_failed_login(
     username: str,
     source: str,
     reason: str = "bad_password",
-    request_id: Optional[str] = None,
-    timestamp: Optional[str] = None,
-) -> Dict[str, Any]:
+    request_id: str | None = None,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
     """
     Record a failed login attempt.
 
@@ -95,12 +95,12 @@ def record_failed_login(
     return event
 
 
-def list_recent_failed_logins(limit: int = 100) -> List[Dict[str, Any]]:
+def list_recent_failed_logins(limit: int = 100) -> list[dict[str, Any]]:
     """
     Return the most recent failed-login events across today + the prior 6
     days, newest first. Capped at `limit` entries.
     """
-    events: List[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     audit_dir = _audit_dir()
     if not audit_dir.exists():
         return events
@@ -112,9 +112,9 @@ def list_recent_failed_logins(limit: int = 100) -> List[Dict[str, Any]]:
     )
     for path in files[:14]:
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
+            with open(path, encoding="utf-8") as f:
+                for raw in f:
+                    line = raw.strip()
                     if not line:
                         continue
                     try:

@@ -60,10 +60,7 @@ async def _handle_message(request: Request):
         # see the raw Message schema. In production the gateway would also
         # verify the JWT signature and expiry here.
         if isinstance(body, dict) and "token" in body and "message" in body:
-            print(
-                f"[GATEWAY] Unwrapping JWT envelope "
-                f"(expires_at={body.get('expires_at')})"
-            )
+            print(f"[GATEWAY] Unwrapping JWT envelope (expires_at={body.get('expires_at')})")
             inner = body["message"]
         else:
             inner = body
@@ -77,7 +74,7 @@ async def _handle_message(request: Request):
         # Save locally for inspection (save the unwrapped form)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = RECEIVED_DIR / f"{timestamp}_{project}_{message_id[:8]}.json"
-        with open(filename, "w") as f:
+        with open(filename, "w", encoding="utf-8") as f:
             json.dump(inner, f, indent=2)
         print(f"[GATEWAY] Saved to: {filename}")
 
@@ -92,9 +89,7 @@ async def _handle_message(request: Request):
 
     except Exception as e:
         print(f"[GATEWAY] Error: {e}")
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
-        )
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)})
 
 
 @app.post("/message")
@@ -115,7 +110,7 @@ async def list_messages():
     files = sorted(RECEIVED_DIR.glob("*.json"), reverse=True)
     messages = []
     for f in files[:20]:  # Last 20
-        with open(f) as fp:
+        with open(f, encoding="utf-8") as fp:
             messages.append({"file": f.name, "content": json.load(fp)})
     return {"count": len(files), "recent": messages}
 
@@ -152,9 +147,7 @@ async def sync_user(request: Request):
 
     except Exception as e:
         print(f"[GATEWAY] User sync error: {e}")
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
-        )
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)})
 
 
 @app.post("/ca")
@@ -174,14 +167,10 @@ async def sync_ca(request: Request):
         except Exception as forward_err:
             print(f"[GATEWAY] Could not forward CA to low-side: {forward_err}")
 
-        return JSONResponse(
-            status_code=status.HTTP_200_OK, content={"status": "accepted"}
-        )
+        return JSONResponse(status_code=status.HTTP_200_OK, content={"status": "accepted"})
     except Exception as e:
         print(f"[GATEWAY] CA sync error: {e}")
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
-        )
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)})
 
 
 @app.post("/client-certs")
@@ -195,15 +184,11 @@ async def sync_client_cert(request: Request):
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(
-                    f"{LOW_SIDE_URL}/dmz/client-certs", json=body
-                )
+                response = await client.post(f"{LOW_SIDE_URL}/dmz/client-certs", json=body)
             if response.status_code < 300:
                 print(f"[GATEWAY] Client cert forwarded to low-side: {key_id}")
             else:
-                print(
-                    f"[GATEWAY] Low-side rejected client cert: {response.status_code}"
-                )
+                print(f"[GATEWAY] Low-side rejected client cert: {response.status_code}")
         except Exception as forward_err:
             print(f"[GATEWAY] Could not forward client cert to low-side: {forward_err}")
 
@@ -213,9 +198,7 @@ async def sync_client_cert(request: Request):
         )
     except Exception as e:
         print(f"[GATEWAY] Client cert sync error: {e}")
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
-        )
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)})
 
 
 @app.post("/audit/failed-login")
@@ -228,9 +211,7 @@ async def forward_failed_login(request: Request):
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(
-                    f"{CORPORATE_URL}/dmz/audit/failed-login", json=body
-                )
+                response = await client.post(f"{CORPORATE_URL}/dmz/audit/failed-login", json=body)
             if response.status_code < 300:
                 print(f"[GATEWAY] Audit event forwarded to corporate: {username}")
             else:
@@ -244,9 +225,7 @@ async def forward_failed_login(request: Request):
         )
     except Exception as e:
         print(f"[GATEWAY] Audit event error: {e}")
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)}
-        )
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": str(e)})
 
 
 if __name__ == "__main__":

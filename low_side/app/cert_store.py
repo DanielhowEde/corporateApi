@@ -16,7 +16,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .utils import setup_logging
 
@@ -26,18 +26,14 @@ logger = setup_logging("cert_store")
 class CertStoreError(Exception):
     """Exception raised when cert store operations fail."""
 
-    pass
-
 
 class CertStore:
     """Read/write store for CA cert and synced client certs."""
 
-    def __init__(self, keys_dir: Optional[str] = None):
+    def __init__(self, keys_dir: str | None = None):
         from .config import config
 
-        self.keys_dir = (
-            Path(keys_dir) if keys_dir else config.master_dir.parent / "keys"
-        )
+        self.keys_dir = Path(keys_dir) if keys_dir else config.master_dir.parent / "keys"
         self.keys_dir.mkdir(parents=True, exist_ok=True)
         self.clients_dir = self.keys_dir / "clients"
         self.clients_dir.mkdir(parents=True, exist_ok=True)
@@ -58,7 +54,7 @@ class CertStore:
         except OSError as e:
             raise CertStoreError(f"Failed to save CA cert: {e}") from e
 
-    def get_ca_pem(self) -> Optional[str]:
+    def get_ca_pem(self) -> str | None:
         """Return the CA cert as PEM, or None if not synced yet."""
         if not self.ca_path.exists():
             return None
@@ -67,7 +63,7 @@ class CertStore:
         except OSError:
             return None
 
-    def save_client_cert(self, cert_data: Dict[str, Any]) -> Path:
+    def save_client_cert(self, cert_data: dict[str, Any]) -> Path:
         """
         Save a synced client cert record.
 
@@ -109,7 +105,7 @@ class CertStore:
         except OSError as e:
             raise CertStoreError(f"Failed to save client cert: {e}") from e
 
-    def list_clients(self) -> List[Dict[str, Any]]:
+    def list_clients(self) -> list[dict[str, Any]]:
         """List all synced client cert records, newest first."""
         records = []
         if not self.clients_dir.exists():

@@ -10,7 +10,7 @@ Endpoints:
 """
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -46,14 +46,12 @@ async def wrap_message(request: Request):
             content={"error": "Invalid JSON body"},
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=CERT_VALIDITY_SECONDS)
 
     # Build a mock JWT token (header.payload.signature format, base64-like)
     message_id = body.get("ID", str(uuid.uuid4()))
-    mock_token = (
-        f"eyJhbGciOiJSUzI1NiJ9.{message_id}.mock_signature_{uuid.uuid4().hex[:16]}"
-    )
+    mock_token = f"eyJhbGciOiJSUzI1NiJ9.{message_id}.mock_signature_{uuid.uuid4().hex[:16]}"
 
     wrapped = {
         "token": mock_token,

@@ -18,7 +18,6 @@ import re
 import secrets
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from .utils import setup_logging
 
@@ -47,7 +46,7 @@ _PASSWORD_CHECKS = [
 ]
 
 
-def validate_password_strength(password: str) -> Tuple[bool, str]:
+def validate_password_strength(password: str) -> tuple[bool, str]:
     """
     Enforce the password policy.
 
@@ -68,7 +67,7 @@ USERS_FILE_PATH = Path(os.environ.get("USERS_FILE_PATH", "./data/users.json"))
 SESSION_SECRET = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
 
 # Active sessions: token -> {"type": "admin"|"user", "username": str, "expiry": float}
-active_sessions: Dict[str, dict] = {}
+active_sessions: dict[str, dict] = {}
 
 
 def _hash_password(password: str, salt: str = "") -> str:
@@ -89,12 +88,12 @@ def _verify_password_hash(password: str, stored_hash: str) -> bool:
         return False
 
 
-def _load_users() -> Dict[str, dict]:
+def _load_users() -> dict[str, dict]:
     """Load users from file."""
     if not USERS_FILE_PATH.exists():
         return {}
     try:
-        with open(USERS_FILE_PATH, "r", encoding="utf-8") as f:
+        with open(USERS_FILE_PATH, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("users", {})
     except (json.JSONDecodeError, OSError) as e:
@@ -102,7 +101,7 @@ def _load_users() -> Dict[str, dict]:
         return {}
 
 
-def _save_users(users: Dict[str, dict]) -> bool:
+def _save_users(users: dict[str, dict]) -> bool:
     """Save users to file atomically."""
     USERS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = USERS_FILE_PATH.with_suffix(".json.tmp")
@@ -171,7 +170,7 @@ def create_admin_session(username: str) -> str:
     return token
 
 
-def verify_admin_session(token: Optional[str]) -> bool:
+def verify_admin_session(token: str | None) -> bool:
     """Verify if a session token is a valid admin session."""
     if not token or token not in active_sessions:
         return False
@@ -184,7 +183,7 @@ def verify_admin_session(token: Optional[str]) -> bool:
     return True
 
 
-def get_admin_username_from_session(token: Optional[str]) -> Optional[str]:
+def get_admin_username_from_session(token: str | None) -> str | None:
     """Get the admin username from a valid session token."""
     if not token or token not in active_sessions:
         return None
@@ -250,7 +249,7 @@ def create_user_session(username: str) -> str:
     return token
 
 
-def verify_user_session(token: Optional[str]) -> Optional[str]:
+def verify_user_session(token: str | None) -> str | None:
     """
     Verify if a session token is a valid user session.
     Returns the username if valid, None otherwise.
@@ -277,9 +276,7 @@ def invalidate_session(token: str) -> None:
 # =============================================================================
 
 
-def create_admin_user(
-    username: str, password: str, enabled: bool = True
-) -> Tuple[bool, str]:
+def create_admin_user(username: str, password: str, enabled: bool = True) -> tuple[bool, str]:
     """
     Create a new admin account.
     Returns (success, message).
@@ -308,7 +305,7 @@ def create_admin_user(
     return False, "Failed to save admin user"
 
 
-def delete_admin_user(username: str) -> Tuple[bool, str]:
+def delete_admin_user(username: str) -> tuple[bool, str]:
     """
     Delete an admin account.
     Prevents deleting the last remaining admin.
@@ -331,7 +328,7 @@ def delete_admin_user(username: str) -> Tuple[bool, str]:
     return False, "Failed to save changes"
 
 
-def list_admins() -> List[Tuple[str, bool, str]]:
+def list_admins() -> list[tuple[str, bool, str]]:
     """
     List all admin users.
     Returns list of (username, enabled, created_date).
@@ -354,7 +351,7 @@ def create_user(
     password: str,
     enabled: bool = True,
     must_change_password: bool = True,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Create a new user account.
     Returns (success, message).
@@ -385,7 +382,7 @@ def create_user(
 
 def update_user_password(
     username: str, new_password: str, clear_must_change: bool = True
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Update a user's or admin's password."""
     ok, msg = validate_password_strength(new_password)
     if not ok:
@@ -415,7 +412,7 @@ def user_must_change_password(username: str) -> bool:
     return user.get("must_change_password", False)
 
 
-def enable_user(username: str) -> Tuple[bool, str]:
+def enable_user(username: str) -> tuple[bool, str]:
     """Enable a user account."""
     users = _load_users()
     if username not in users:
@@ -428,7 +425,7 @@ def enable_user(username: str) -> Tuple[bool, str]:
     return False, "Failed to save changes"
 
 
-def disable_user(username: str) -> Tuple[bool, str]:
+def disable_user(username: str) -> tuple[bool, str]:
     """Disable a user account."""
     users = _load_users()
     if username not in users:
@@ -441,7 +438,7 @@ def disable_user(username: str) -> Tuple[bool, str]:
     return False, "Failed to save changes"
 
 
-def delete_user(username: str) -> Tuple[bool, str]:
+def delete_user(username: str) -> tuple[bool, str]:
     """Delete a regular user account."""
     users = _load_users()
     if username not in users:
@@ -456,7 +453,7 @@ def delete_user(username: str) -> Tuple[bool, str]:
     return False, "Failed to save changes"
 
 
-def list_users() -> List[Tuple[str, bool, str]]:
+def list_users() -> list[tuple[str, bool, str]]:
     """
     List all regular (non-admin) users.
     Returns list of (username, enabled, created_date).
@@ -479,7 +476,7 @@ def get_user_count() -> int:
 # =============================================================================
 
 
-def get_user_allowed_projects(username: str) -> List[str]:
+def get_user_allowed_projects(username: str) -> list[str]:
     """
     Return the list of project codes this user is allowed to send to.
 
@@ -494,9 +491,7 @@ def get_user_allowed_projects(username: str) -> List[str]:
     return [str(code).upper() for code in allowed if code]
 
 
-def set_user_allowed_projects(
-    username: str, project_codes: List[str]
-) -> Tuple[bool, str]:
+def set_user_allowed_projects(username: str, project_codes: list[str]) -> tuple[bool, str]:
     """
     Replace a user's allowed projects list.
 

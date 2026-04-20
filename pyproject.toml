@@ -22,3 +22,58 @@ norecursedirs = [
 # Top-level integration tests only (the file driven by the CI integration
 # stage). Leave testpaths unset here if you want collection to walk `tests/`.
 testpaths = ["tests"]
+
+
+# =============================================================================
+# Ruff — single source of truth for lint + format
+# =============================================================================
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".venv", "venv", "env",
+    "build", "release",
+    "__pycache__", ".cache",
+    "data",
+]
+
+[tool.ruff.lint]
+# Rule sets that are worth enforcing:
+#   E/W/F  = pycodestyle / pyflakes baseline
+#   I      = isort (import ordering)
+#   UP     = pyupgrade (modern Python syntax)
+#   B      = flake8-bugbear (common bugs)
+#   SIM    = flake8-simplify (code-quality simplifications)
+#   C4     = flake8-comprehensions
+#   RET    = flake8-return
+#   PL     = pylint (overlap — we use this sparingly via `ignore` below)
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "RET", "PL"]
+
+# Opinionated rules we deliberately accept:
+ignore = [
+    # Magic values: test assertions use literal status codes (200, 303, 400) all
+    # the time. Forcing named constants for HTTP statuses is pure ceremony.
+    "PLR2004",
+    # Imports inside functions: used intentionally to avoid circular imports
+    # and to defer heavy deps (cryptography) until the code path needs them.
+    "PLC0415",
+    # Global-statement: used for the set_whitelist/set_gateway_client DI pattern.
+    "PLW0603",
+    # Complexity metrics: FastAPI form handlers legitimately take many params
+    # and have multiple early-return guards.
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+    # FastAPI uses `Form(...)` / `Depends(...)` in defaults — that's the whole
+    # DI contract; can't be a module-level constant.
+    "B008",
+    # Line length: ruff format handles it; the remaining long lines are URLs
+    # or error messages where breaking hurts readability.
+    "E501",
+    # Bare except patterns we accept on best-effort paths (audit sync etc).
+    "BLE001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may shadow variables and use literal comparisons freely.
+"**/tests/**" = ["PLR0915", "PLR0912", "PLW0603"]
+"tests/**" = ["PLR0915", "PLR0912", "PLW0603"]
+

@@ -3,7 +3,7 @@ HTTP client for forwarding messages to the DMZ Gateway.
 """
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -15,13 +15,9 @@ logger = setup_logging("gateway_client")
 class GatewayError(Exception):
     """Exception raised when gateway communication fails."""
 
-    pass
-
 
 class GatewayUnavailableError(GatewayError):
     """Exception raised when the gateway is unavailable."""
-
-    pass
 
 
 class GatewayClient:
@@ -38,9 +34,7 @@ class GatewayClient:
     MAX_RETRIES = 2
     INITIAL_BACKOFF = 0.5  # seconds
 
-    def __init__(
-        self, base_url: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT
-    ):
+    def __init__(self, base_url: str | None = None, timeout: float = DEFAULT_TIMEOUT):
         """
         Initialize the gateway client.
 
@@ -52,7 +46,7 @@ class GatewayClient:
 
         self.base_url = base_url or config.gateway_url
         self.timeout = timeout
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the async HTTP client."""
@@ -68,9 +62,7 @@ class GatewayClient:
             await self._client.aclose()
             self._client = None
 
-    async def report_failed_login(
-        self, username: str, reason: str = "bad_password"
-    ) -> None:
+    async def report_failed_login(self, username: str, reason: str = "bad_password") -> None:
         """
         Forward a failed login event to corporate via the gateway (best-effort).
 
@@ -105,7 +97,7 @@ class GatewayClient:
                 f"Audit event to gateway failed (non-fatal): username={username}, error={e}"
             )
 
-    async def send_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def send_message(self, message_data: dict[str, Any]) -> dict[str, Any]:
         """
         Send a message to the DMZ Gateway.
 
@@ -128,7 +120,7 @@ class GatewayClient:
         message_id = message_data.get("ID", "unknown")
 
         client = await self._get_client()
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
@@ -146,18 +138,15 @@ class GatewayClient:
                     logger.warning(
                         f"Gateway returned {response.status_code}: message_id={message_id}"
                     )
-                    last_error = GatewayError(
-                        f"Gateway returned {response.status_code}"
-                    )
+                    last_error = GatewayError(f"Gateway returned {response.status_code}")
 
                     if attempt < self.MAX_RETRIES:
                         backoff = self.INITIAL_BACKOFF * (2**attempt)
                         await asyncio.sleep(backoff)
                         continue
-                    else:
-                        raise GatewayUnavailableError(
-                            f"Gateway unavailable after {self.MAX_RETRIES + 1} attempts"
-                        )
+                    raise GatewayUnavailableError(
+                        f"Gateway unavailable after {self.MAX_RETRIES + 1} attempts"
+                    )
 
                 # Check for 4xx errors (don't retry these)
                 if response.status_code >= 400:
@@ -165,18 +154,14 @@ class GatewayClient:
                         f"Gateway rejected message: message_id={message_id}, "
                         f"status={response.status_code}"
                     )
-                    raise GatewayError(
-                        f"Gateway rejected message: {response.status_code}"
-                    )
+                    raise GatewayError(f"Gateway rejected message: {response.status_code}")
 
                 # Success
                 logger.info(f"Message sent successfully: message_id={message_id}")
                 return response.json()
 
             except httpx.TimeoutException as e:
-                logger.warning(
-                    f"Gateway timeout: message_id={message_id}, attempt={attempt + 1}"
-                )
+                logger.warning(f"Gateway timeout: message_id={message_id}, attempt={attempt + 1}")
                 last_error = e
 
                 if attempt < self.MAX_RETRIES:
@@ -200,6 +185,4 @@ class GatewayClient:
             f"Gateway unavailable after all retries: message_id={message_id}, "
             f"last_error={last_error}"
         )
-        raise GatewayUnavailableError(
-            f"Gateway unavailable after {self.MAX_RETRIES + 1} attempts"
-        )
+        raise GatewayUnavailableError(f"Gateway unavailable after {self.MAX_RETRIES + 1} attempts")

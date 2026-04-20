@@ -76,11 +76,17 @@
                         {% endif %}
                     </td>
                     <td style="padding: 0.75rem;">
-                        <div style="display: flex; gap: 0.5rem;">
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                             <button type="submit" formaction="/user/pending/{{ msg.ID }}/send"
                                     class="btn btn-success" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;">
                                 Send
                             </button>
+                            <a href="/user/pending/{{ msg.ID }}/edit-token"
+                               class="btn btn-secondary"
+                               style="padding: 0.35rem 0.75rem; font-size: 0.85rem;"
+                               title="Modify the JWT before sending (for testing invalid certs)">
+                                Edit Token
+                            </a>
                             <button type="submit" formaction="/user/pending/{{ msg.ID }}/discard"
                                     class="btn btn-secondary"
                                     style="padding: 0.35rem 0.75rem; font-size: 0.85rem; background: #ef4444; color: white;"

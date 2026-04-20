@@ -3,7 +3,19 @@
     "allow": [
       "Bash(python -m pytest tests/test_schema_validation.py::TestMessageModel::test_valid_message_passes_validation -v --tb=long)",
       "Bash(python -m pytest tests/ --tb=short)",
-      "Bash(python -m pytest tests/)"
+      "Bash(python -m pytest tests/)",
+      "Bash(python -m pip install pylint)",
+      "Bash(python -m pylint corporate/app low_side/app mock_gateway/main.py mock_cert_gateway/main.py --errors-only --disable=import-error)",
+      "Bash(python -m pylint app --errors-only --disable=import-error)",
+      "Bash(python -m pylint app --disable=import-error,missing-docstring,too-few-public-methods,too-many-arguments,too-many-locals,too-many-branches,too-many-statements,too-many-lines,line-too-long,fixme,invalid-name,broad-except)",
+      "Bash(python -m pylint app --disable=import-error,missing-docstring,too-few-public-methods,too-many-arguments,too-many-locals,too-many-branches,too-many-statements,too-many-lines,line-too-long,fixme,invalid-name,broad-except,duplicate-code)",
+      "Bash(python -m pylint app --disable=import-error,missing-docstring,too-few-public-methods,too-many-arguments,too-many-locals,too-many-branches,too-many-statements,too-many-lines,line-too-long,fixme,invalid-name,broad-except,duplicate-code,logging-fstring-interpolation,import-outside-toplevel,global-statement,unused-argument,too-many-positional-arguments,consider-iterating-dictionary,broad-exception-caught)",
+      "Bash(python -)",
+      "Bash(python -m pytest)",
+      "Bash(python -m pylint app --rcfile=../.pylintrc)",
+      "Bash(python -m pip install ruff)",
+      "Bash(python -m ruff check corporate/app low_side/app mock_gateway mock_cert_gateway tests)",
+      "Bash(python -m ruff format --check corporate/app low_side/app mock_gateway mock_cert_gateway tests)"
     ]
   }
 }

@@ -1,0 +1,51 @@
+[MAIN]
+# Run each service from its own directory so pylint doesn't conflate the
+# two `app` packages:
+#   cd corporate && pylint app
+#   cd low_side  && pylint app
+ignore = venv, .venv, tests, build, release, __pycache__, data
+
+[MESSAGES CONTROL]
+# Opinionated rules we deliberately accept:
+# - missing-docstring: dozens of FastAPI endpoints have self-explanatory names
+# - logging-fstring-interpolation: f-strings are fine at our log volume
+# - import-outside-toplevel: used intentionally to break circular imports
+# - global-statement: dependency-injection pattern for module-level state
+# - unused-argument: FastAPI endpoints often take `request` reserved for future use
+# - duplicate-code: retry loops in cert_client + gateway_client look similar
+#                   but serve different endpoints and responses
+# - too-many-*: our handlers span many lines but each is a single logical op
+# - line-too-long: ruff handles this
+# - invalid-name: `v` / `e` / `f` are idiomatic here
+# - broad-except*: we log-and-continue on best-effort paths (sync, audit)
+# - import-error: pylint can't see venv-installed packages when run elsewhere
+# - consider-iterating-dictionary: explicit .keys() is readable
+# - too-many-positional-arguments: FastAPI form handlers legitimately take many
+# - fixme: TODO/FIXME are allowed; we track them separately
+disable =
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    logging-fstring-interpolation,
+    import-outside-toplevel,
+    global-statement,
+    unused-argument,
+    duplicate-code,
+    too-few-public-methods,
+    too-many-arguments,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    too-many-lines,
+    too-many-return-statements,
+    too-many-positional-arguments,
+    line-too-long,
+    invalid-name,
+    broad-except,
+    broad-exception-caught,
+    import-error,
+    consider-iterating-dictionary,
+    fixme,
+
+[FORMAT]
+max-line-length = 100

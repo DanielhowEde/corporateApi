@@ -13,7 +13,6 @@ import os
 import re
 import secrets
 from datetime import datetime
-from typing import Dict, Optional, Tuple
 
 from .config import config
 from .utils import setup_logging
@@ -41,7 +40,7 @@ _PASSWORD_CHECKS = [
 ]
 
 
-def validate_password_strength(password: str) -> Tuple[bool, str]:
+def validate_password_strength(password: str) -> tuple[bool, str]:
     """Return (ok, reason) — True/empty-string when policy is met."""
     if not password or len(password) < PASSWORD_MIN_LENGTH:
         return False, f"Password must be at least {PASSWORD_MIN_LENGTH} characters"
@@ -50,8 +49,9 @@ def validate_password_strength(password: str) -> Tuple[bool, str]:
         return False, "Password must contain " + ", ".join(missing)
     return True, ""
 
+
 # Active sessions: token -> {username, expiry}
-active_sessions: Dict[str, dict] = {}
+active_sessions: dict[str, dict] = {}
 
 
 def _hash_password(password: str, salt: str = "") -> str:
@@ -72,13 +72,13 @@ def _verify_password_hash(password: str, stored_hash: str) -> bool:
         return False
 
 
-def _load_users() -> Dict[str, dict]:
+def _load_users() -> dict[str, dict]:
     """Load users from file."""
     path = config.users_file_path
     if not path.exists():
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("users", {})
     except (json.JSONDecodeError, OSError) as e:
@@ -86,7 +86,7 @@ def _load_users() -> Dict[str, dict]:
         return {}
 
 
-def _save_users(users: Dict[str, dict]) -> bool:
+def _save_users(users: dict[str, dict]) -> bool:
     """Save users to file atomically."""
     path = config.users_file_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -153,9 +153,7 @@ def sync_user_from_corporate(user_data: dict) -> tuple[bool, str]:
         "synced": datetime.now().isoformat(),
     }
     _save_users(users)
-    logger.info(
-        f"User upserted via sync: {username} (allowed_projects={allowed})"
-    )
+    logger.info(f"User upserted via sync: {username} (allowed_projects={allowed})")
     return True, f"User '{username}' synced"
 
 
@@ -198,7 +196,7 @@ def create_user_session(username: str) -> str:
     return token
 
 
-def verify_user_session(token: Optional[str]) -> Optional[str]:
+def verify_user_session(token: str | None) -> str | None:
     """Return the username if the session token is valid, else None."""
     if not token or token not in active_sessions:
         return None

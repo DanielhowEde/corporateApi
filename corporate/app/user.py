@@ -16,19 +16,17 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Cookie, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from . import audit, auth
 from .config import config
 from .file_store import FileStore
 from .models import Message
-from .whitelist import ProjectWhitelist
 from .utils import setup_logging
-from . import audit
-from . import auth
+from .whitelist import ProjectWhitelist
 
 logger = setup_logging("user_interface")
 
@@ -51,9 +49,9 @@ def get_branding() -> dict:
 router = APIRouter(prefix="/user", tags=["User Interface"])
 
 # Instances (will be set by main.py)
-whitelist: Optional[ProjectWhitelist] = None
+whitelist: ProjectWhitelist | None = None
 gateway_client = None
-file_store: Optional[FileStore] = None
+file_store: FileStore | None = None
 
 
 def set_whitelist(wl: ProjectWhitelist) -> None:
@@ -74,14 +72,14 @@ def set_file_store(fs: FileStore) -> None:
     file_store = fs
 
 
-def get_current_user(session_token: Optional[str]) -> Optional[str]:
+def get_current_user(session_token: str | None) -> str | None:
     """Get the username for a valid session token, or None if invalid."""
     return auth.verify_user_session(session_token)
 
 
 def require_auth(
-    session_token: Optional[str],
-) -> tuple[Optional[RedirectResponse], Optional[str]]:
+    session_token: str | None,
+) -> tuple[RedirectResponse | None, str | None]:
     """
     Check if user is authenticated.
     Returns (redirect_response, username).
@@ -111,7 +109,8 @@ async def user_login_page(request: Request, error: str = "", message: str = ""):
     return templates.TemplateResponse(
         request,
         "user/login.html",
-        {"title": "Login",
+        {
+            "title": "Login",
             "error": error,
             "message": message,
             **get_branding(),
@@ -120,9 +119,7 @@ async def user_login_page(request: Request, error: str = "", message: str = ""):
 
 
 @router.post("/login", name="user_login_submit")
-async def user_login_submit(
-    request: Request, username: str = Form(...), password: str = Form(...)
-):
+async def user_login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
     """Handle login form submission."""
     username = username.strip()
 
@@ -137,9 +134,7 @@ async def user_login_submit(
                 status_code=status.HTTP_303_SEE_OTHER,
             )
         else:
-            response = RedirectResponse(
-                url="/user/", status_code=status.HTTP_303_SEE_OTHER
-            )
+            response = RedirectResponse(url="/user/", status_code=status.HTTP_303_SEE_OTHER)
 
         response.set_cookie(
             key="session_token",
@@ -149,19 +144,17 @@ async def user_login_submit(
             max_age=8 * 60 * 60,  # 8 hours
         )
         return response
-    else:
-        reason = auth.classify_login_failure(username, role="user")
-        audit.record_failed_login(
-            username=username, source="corporate-user", reason=reason
-        )
-        return RedirectResponse(
-            url="/user/login?error=Invalid+username+or+password",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+
+    reason = auth.classify_login_failure(username, role="user")
+    audit.record_failed_login(username=username, source="corporate-user", reason=reason)
+    return RedirectResponse(
+        url="/user/login?error=Invalid+username+or+password",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.get("/logout", name="user_logout")
-async def user_logout(session_token: Optional[str] = Cookie(None)):
+async def user_logout(session_token: str | None = Cookie(None)):
     """Logout and invalidate session."""
     if session_token:
         auth.invalidate_session(session_token)
@@ -179,15 +172,13 @@ async def user_logout(session_token: Optional[str] = Cookie(None)):
 # =============================================================================
 
 
-@router.get(
-    "/change-password", response_class=HTMLResponse, name="user_change_password"
-)
+@router.get("/change-password", response_class=HTMLResponse, name="user_change_password")
 async def user_change_password_page(
     request: Request,
     required: str = "",
     error: str = "",
     message: str = "",
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Password change page."""
     redirect, username = require_auth(session_token)
@@ -199,7 +190,8 @@ async def user_change_password_page(
     return templates.TemplateResponse(
         request,
         "user/change_password.html",
-        {"title": "Change Password",
+        {
+            "title": "Change Password",
             "username": username,
             "is_required": is_required,
             "error": error,
@@ -215,7 +207,7 @@ async def user_change_password_submit(
     current_password: str = Form(...),
     new_password: str = Form(...),
     confirm_password: str = Form(...),
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Handle password change form submission."""
     redirect, username = require_auth(session_token)
@@ -244,9 +236,7 @@ async def user_change_password_submit(
         )
 
     # Update password
-    success, msg = auth.update_user_password(
-        username, new_password, clear_must_change=True
-    )
+    success, msg = auth.update_user_password(username, new_password, clear_must_change=True)
 
     if success:
         logger.info(f"User changed password: {username}")
@@ -267,9 +257,7 @@ async def user_change_password_submit(
 
 
 @router.get("/", response_class=HTMLResponse, name="user_home")
-async def user_home(
-    request: Request, message: str = "", session_token: Optional[str] = Cookie(None)
-):
+async def user_home(request: Request, message: str = "", session_token: str | None = Cookie(None)):
     """User home page."""
     redirect, username = require_auth(session_token)
     if redirect:
@@ -285,7 +273,8 @@ async def user_home(
     return templates.TemplateResponse(
         request,
         "user/home.html",
-        {"title": "User Portal",
+        {
+            "title": "User Portal",
             "username": username,
             "message": message,
             **get_branding(),
@@ -298,7 +287,7 @@ async def user_send_message_page(
     request: Request,
     message: str = "",
     error: str = "",
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """
     Message sending page - allows manual message composition and sending.
@@ -334,7 +323,8 @@ async def user_send_message_page(
     return templates.TemplateResponse(
         request,
         "user/send_message.html",
-        {"title": "Send Message",
+        {
+            "title": "Send Message",
             "username": username,
             "projects": projects,
             "default_id": default_id,
@@ -356,8 +346,8 @@ async def user_send_message_submit(
     timestamp: str = Form(...),
     test_status: str = Form(...),
     data_json: str = Form("{}"),
-    auto_send: Optional[str] = Form(None),
-    session_token: Optional[str] = Cookie(None),
+    auto_send: str | None = Form(None),
+    session_token: str | None = Cookie(None),
 ):
     """Handle message form submission with cert wrapping and auto-send support."""
     redirect, username = require_auth(session_token)
@@ -370,16 +360,19 @@ async def user_send_message_submit(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    from .gateway_client import GatewayError, GatewayUnavailableError
     from .cert_client import CertGatewayError, CertGatewayUnavailableError
-    from datetime import datetime as dt
+    from .gateway_client import GatewayError, GatewayUnavailableError
 
     send_log = []
     should_auto_send = auto_send == "on"
 
     def log_entry(level: str, message: str):
         send_log.append(
-            {"time": dt.now().strftime("%H:%M:%S"), "level": level, "message": message}
+            {
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "level": level,
+                "message": message,
+            }
         )
 
     # Parse the data JSON
@@ -431,9 +424,7 @@ async def user_send_message_submit(
 
     # Check per-user project access (admin must grant each project explicitly)
     if not auth.user_can_send_to_project(username, validated_message.Project):
-        logger.warning(
-            f"User {username} not authorised for project {validated_message.Project}"
-        )
+        logger.warning(f"User {username} not authorised for project {validated_message.Project}")
         return RedirectResponse(
             url=f"/user/send?error=You+are+not+authorised+to+send+to+{validated_message.Project}",
             status_code=status.HTTP_303_SEE_OTHER,
@@ -471,27 +462,22 @@ async def user_send_message_submit(
                 "success",
                 f"Message cert-wrapped and queued (auto-send disabled). ID: {validated_message.ID}",
             )
-            logger.info(
-                f"User {username} cert-wrapped message (queued): {validated_message.ID}"
-            )
+            logger.info(f"User {username} cert-wrapped message (queued): {validated_message.ID}")
 
         # Render the page with send log instead of redirect
         projects = []
         if whitelist:
-            projects = [
-                (code, enabled)
-                for code, enabled in whitelist.list_projects()
-                if enabled
-            ]
+            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
 
         return templates.TemplateResponse(
             request,
-        "user/send_message.html",
-        {"title": "Send Message",
+            "user/send_message.html",
+            {
+                "title": "Send Message",
                 "username": username,
                 "projects": projects,
                 "default_id": str(uuid.uuid4()),
-                "default_timestamp": dt.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "default_timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
                 "message": f"Message {'sent' if should_auto_send else 'wrapped'} successfully! ID: {validated_message.ID}",
                 "error": "",
                 "send_log": send_log,
@@ -505,16 +491,13 @@ async def user_send_message_submit(
 
         projects = []
         if whitelist:
-            projects = [
-                (code, enabled)
-                for code, enabled in whitelist.list_projects()
-                if enabled
-            ]
+            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
 
         return templates.TemplateResponse(
             request,
-        "user/send_message.html",
-        {"title": "Send Message",
+            "user/send_message.html",
+            {
+                "title": "Send Message",
                 "username": username,
                 "projects": projects,
                 "default_id": message_id,
@@ -532,16 +515,13 @@ async def user_send_message_submit(
 
         projects = []
         if whitelist:
-            projects = [
-                (code, enabled)
-                for code, enabled in whitelist.list_projects()
-                if enabled
-            ]
+            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
 
         return templates.TemplateResponse(
             request,
-        "user/send_message.html",
-        {"title": "Send Message",
+            "user/send_message.html",
+            {
+                "title": "Send Message",
                 "username": username,
                 "projects": projects,
                 "default_id": message_id,
@@ -559,16 +539,13 @@ async def user_send_message_submit(
 
         projects = []
         if whitelist:
-            projects = [
-                (code, enabled)
-                for code, enabled in whitelist.list_projects()
-                if enabled
-            ]
+            projects = [(code, enabled) for code, enabled in whitelist.list_projects() if enabled]
 
         return templates.TemplateResponse(
             request,
-        "user/send_message.html",
-        {"title": "Send Message",
+            "user/send_message.html",
+            {
+                "title": "Send Message",
                 "username": username,
                 "projects": projects,
                 "default_id": message_id,
@@ -589,7 +566,7 @@ async def user_history(
     page: int = 1,
     message: str = "",
     error: str = "",
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Message history page with filtering, search, and pagination (20 per page)."""
     redirect, username = require_auth(session_token)
@@ -617,7 +594,7 @@ async def user_history(
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
     page = max(1, min(page, total_pages))
     start = (page - 1) * PER_PAGE
-    messages = all_messages[start:start + PER_PAGE]
+    messages = all_messages[start : start + PER_PAGE]
 
     # Also get enabled projects from whitelist for the filter dropdown
     whitelist_projects = []
@@ -630,7 +607,8 @@ async def user_history(
     return templates.TemplateResponse(
         request,
         "user/history.html",
-        {"title": "Message History",
+        {
+            "title": "Message History",
             "username": username,
             "messages": messages,
             "projects": all_projects,
@@ -654,7 +632,7 @@ async def user_history(
 async def user_history_clear(
     request: Request,
     older_than_days: int = Form(0),
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Delete stored history messages older than N days (0 = all)."""
     redirect, username = require_auth(session_token)
@@ -670,9 +648,7 @@ async def user_history_clear(
     days = max(0, int(older_than_days))
     deleted = file_store.clear_messages(older_than_days=days)
     scope = "all" if days == 0 else f"older+than+{days}+day(s)"
-    logger.info(
-        f"User {username} cleared history: older_than_days={days}, deleted={deleted}"
-    )
+    logger.info(f"User {username} cleared history: older_than_days={days}, deleted={deleted}")
     return RedirectResponse(
         url=f"/user/history?message=Cleared+{deleted}+message(s)+({scope})",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -689,7 +665,7 @@ async def user_pending(
     request: Request,
     message: str = "",
     error: str = "",
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Pending messages queue — messages awaiting manual send."""
     redirect, username = require_auth(session_token)
@@ -709,7 +685,8 @@ async def user_pending(
     return templates.TemplateResponse(
         request,
         "user/pending.html",
-        {"title": "Pending Queue",
+        {
+            "title": "Pending Queue",
             "username": username,
             "pending": pending,
             "pending_count": len(pending),
@@ -724,15 +701,15 @@ async def user_pending(
 async def user_bulk_send_pending(
     request: Request,
     message_ids: list[str] = Form(default=[]),
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Send multiple selected pending messages."""
     redirect, username = require_auth(session_token)
     if redirect:
         return redirect
 
-    from .gateway_client import GatewayError, GatewayUnavailableError
     from .file_store import FileStoreError
+    from .gateway_client import GatewayError, GatewayUnavailableError
 
     if not file_store or not gateway_client:
         return RedirectResponse(
@@ -777,7 +754,7 @@ async def user_bulk_send_pending(
 async def user_bulk_discard_pending(
     request: Request,
     message_ids: list[str] = Form(default=[]),
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Discard multiple selected pending messages."""
     redirect, username = require_auth(session_token)
@@ -802,17 +779,118 @@ async def user_bulk_discard_pending(
     )
 
 
+@router.get(
+    "/pending/{message_id}/edit-token",
+    response_class=HTMLResponse,
+    name="user_edit_pending_token",
+)
+async def user_edit_pending_token_form(
+    request: Request,
+    message_id: str,
+    error: str = "",
+    message: str = "",
+    session_token: str | None = Cookie(None),
+):
+    """
+    Show a form pre-filled with the current JWT token + expiry so the
+    user can edit them. Saving returns to /user/pending where the admin
+    can then click Send Now to observe how the gateway reacts.
+    """
+    from .file_store import FileStoreError
+
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    if not file_store:
+        return RedirectResponse(
+            url="/user/pending?error=Service+not+configured",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        record = file_store.get_pending(message_id)
+    except FileStoreError:
+        return RedirectResponse(
+            url="/user/pending?error=Pending+message+not+found",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    wrapped = record.get("wrapped", {}) or {}
+    inner = record.get("message", {}) or {}
+    return templates.TemplateResponse(
+        request,
+        "user/edit_token.html",
+        {
+            "title": "Edit JWT Token",
+            "username": username,
+            "message_id": message_id,
+            "message_inner": inner,
+            "token": wrapped.get("token", ""),
+            "expires_at": wrapped.get("expires_at", ""),
+            "token_edits": record.get("token_edits", []),
+            "error": error,
+            "message": message,
+            **get_branding(),
+        },
+    )
+
+
+@router.post("/pending/{message_id}/edit-token", name="user_edit_pending_token_submit")
+async def user_edit_pending_token_submit(
+    request: Request,
+    message_id: str,
+    token: str = Form(...),
+    expires_at: str = Form(""),
+    session_token: str | None = Cookie(None),
+):
+    """
+    Save the edited JWT token (and optional new expiry) back to the
+    pending record so the next Send Now uses the modified cert.
+    """
+    from .file_store import FileStoreError
+
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    if not file_store:
+        return RedirectResponse(
+            url="/user/pending?error=Service+not+configured",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        file_store.update_pending_token(
+            message_id=message_id,
+            token=token,
+            expires_at=expires_at.strip() or None,
+        )
+    except FileStoreError as e:
+        logger.warning(f"Failed to update pending token for {message_id}: {e}")
+        return RedirectResponse(
+            url=f"/user/pending/{message_id}/edit-token?error={str(e)[:80].replace(' ', '+')}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    logger.info(f"User {username} edited JWT token on pending message {message_id}")
+    return RedirectResponse(
+        url="/user/pending?message=Token+updated.+Click+Send+Now+to+forward+the+modified+cert.",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 @router.post("/pending/{message_id}/send", name="user_send_pending")
 async def user_send_pending(
-    request: Request, message_id: str, session_token: Optional[str] = Cookie(None)
+    request: Request, message_id: str, session_token: str | None = Cookie(None)
 ):
     """Send a pending message from the queue."""
     redirect, username = require_auth(session_token)
     if redirect:
         return redirect
 
-    from .gateway_client import GatewayError, GatewayUnavailableError
     from .file_store import FileStoreError
+    from .gateway_client import GatewayError, GatewayUnavailableError
 
     if not file_store or not gateway_client:
         return RedirectResponse(
@@ -851,7 +929,7 @@ async def user_send_pending(
 
 @router.post("/pending/{message_id}/discard", name="user_discard_pending")
 async def user_discard_pending(
-    request: Request, message_id: str, session_token: Optional[str] = Cookie(None)
+    request: Request, message_id: str, session_token: str | None = Cookie(None)
 ):
     """Discard a pending message from the queue."""
     redirect, username = require_auth(session_token)

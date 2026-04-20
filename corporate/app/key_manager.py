@@ -20,9 +20,9 @@ Files in {keys_dir}:
 import json
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .utils import setup_logging
 
@@ -31,8 +31,6 @@ logger = setup_logging("key_manager")
 
 class KeyManagerError(Exception):
     """Exception raised when key management operations fail."""
-
-    pass
 
 
 class KeyManager:
@@ -54,9 +52,7 @@ class KeyManager:
     def __init__(self, keys_dir: str = None):
         from .config import config
 
-        self.keys_dir = (
-            Path(keys_dir) if keys_dir else config.master_dir.parent / "keys"
-        )
+        self.keys_dir = Path(keys_dir) if keys_dir else config.master_dir.parent / "keys"
         self.keys_dir.mkdir(parents=True, exist_ok=True)
         self.ca_dir = self.keys_dir / "_ca"
 
@@ -76,7 +72,7 @@ class KeyManager:
         "email": "",
     }
 
-    def _build_ca_subject(self, fields: Dict[str, str]) -> Any:
+    def _build_ca_subject(self, fields: dict[str, str]) -> Any:
         """Assemble an x509.Name from whichever subject fields are populated."""
         from cryptography import x509
         from cryptography.x509.oid import NameOID
@@ -85,29 +81,19 @@ class KeyManager:
         if fields.get("common_name"):
             attrs.append(x509.NameAttribute(NameOID.COMMON_NAME, fields["common_name"]))
         if fields.get("organization"):
-            attrs.append(
-                x509.NameAttribute(NameOID.ORGANIZATION_NAME, fields["organization"])
-            )
+            attrs.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, fields["organization"]))
         if fields.get("organizational_unit"):
             attrs.append(
-                x509.NameAttribute(
-                    NameOID.ORGANIZATIONAL_UNIT_NAME, fields["organizational_unit"]
-                )
+                x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, fields["organizational_unit"])
             )
         if fields.get("country"):
-            attrs.append(
-                x509.NameAttribute(NameOID.COUNTRY_NAME, fields["country"].upper())
-            )
+            attrs.append(x509.NameAttribute(NameOID.COUNTRY_NAME, fields["country"].upper()))
         if fields.get("state_province"):
             attrs.append(
-                x509.NameAttribute(
-                    NameOID.STATE_OR_PROVINCE_NAME, fields["state_province"]
-                )
+                x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, fields["state_province"])
             )
         if fields.get("locality"):
-            attrs.append(
-                x509.NameAttribute(NameOID.LOCALITY_NAME, fields["locality"])
-            )
+            attrs.append(x509.NameAttribute(NameOID.LOCALITY_NAME, fields["locality"]))
         if fields.get("email"):
             attrs.append(x509.NameAttribute(NameOID.EMAIL_ADDRESS, fields["email"]))
 
@@ -141,19 +127,19 @@ class KeyManager:
 
     def _generate_ca(
         self,
-        subject_fields: Dict[str, str],
+        subject_fields: dict[str, str],
         validity_days: int,
         key_size: int,
     ) -> tuple:
         """Mint a brand-new CA key + self-signed cert from the given fields."""
+        from cryptography import x509
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.asymmetric import rsa
-        from cryptography import x509
 
         ca_key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
         ca_subject = self._build_ca_subject(subject_fields)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ca_cert = (
             x509.CertificateBuilder()
             .subject_name(ca_subject)
@@ -162,9 +148,7 @@ class KeyManager:
             .serial_number(x509.random_serial_number())
             .not_valid_before(now)
             .not_valid_after(now + timedelta(days=validity_days))
-            .add_extension(
-                x509.BasicConstraints(ca=True, path_length=None), critical=True
-            )
+            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
             .add_extension(
                 x509.KeyUsage(
                     digital_signature=False,
@@ -189,21 +173,19 @@ class KeyManager:
         Creates with defaults on first call; reuses afterwards.
         """
         try:
-            from cryptography.hazmat.primitives import serialization
             from cryptography import x509
-        except ImportError:
+            from cryptography.hazmat.primitives import serialization
+        except ImportError as exc:
             raise KeyManagerError(
                 "cryptography package is required. Install: pip install cryptography"
-            )
+            ) from exc
 
         self.ca_dir.mkdir(parents=True, exist_ok=True)
         ca_key_path = self.ca_dir / "ca.key"
         ca_crt_path = self.ca_dir / "ca.crt"
 
         if ca_key_path.exists() and ca_crt_path.exists():
-            ca_key = serialization.load_pem_private_key(
-                ca_key_path.read_bytes(), password=None
-            )
+            ca_key = serialization.load_pem_private_key(ca_key_path.read_bytes(), password=None)
             ca_cert = x509.load_pem_x509_certificate(ca_crt_path.read_bytes())
             return ca_key, ca_cert
 
@@ -217,7 +199,7 @@ class KeyManager:
         logger.info(f"CA created: {ca_crt_path}")
         return ca_key, ca_cert
 
-    def get_ca_info(self) -> Optional[Dict[str, Any]]:
+    def get_ca_info(self) -> dict[str, Any] | None:
         """
         Return metadata about the current CA — subject fields, validity
         dates, SHA-256 fingerprint — suitable for display on the admin UI.
@@ -225,8 +207,8 @@ class KeyManager:
         """
         try:
             from cryptography import x509
+            from cryptography.hazmat.primitives import hashes
             from cryptography.x509.oid import NameOID
-            from cryptography.hazmat.primitives import hashes, serialization
         except ImportError:
             return None
 
@@ -289,10 +271,10 @@ class KeyManager:
 
     def regenerate_ca(
         self,
-        subject_fields: Dict[str, str],
+        subject_fields: dict[str, str],
         validity_days: int = CA_VALIDITY_DAYS,
         key_size: int = 4096,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Archive the existing CA, mint a new one from the supplied subject,
         and mark all existing client certs as orphaned.
@@ -311,16 +293,14 @@ class KeyManager:
               - ca_info: dict (same shape as get_ca_info)
         """
         try:
-            import cryptography  # noqa: F401
-        except ImportError:
+            import cryptography  # noqa: F401  pylint: disable=unused-import
+        except ImportError as exc:
             raise KeyManagerError(
                 "cryptography package is required. Install: pip install cryptography"
-            )
+            ) from exc
 
         if key_size not in self.SUPPORTED_SIZES:
-            raise KeyManagerError(
-                f"Unsupported key size: {key_size}. Use {self.SUPPORTED_SIZES}"
-            )
+            raise KeyManagerError(f"Unsupported key size: {key_size}. Use {self.SUPPORTED_SIZES}")
         if validity_days <= 0 or validity_days > 3650 * 5:
             raise KeyManagerError("validity_days must be between 1 and 18250")
 
@@ -353,7 +333,7 @@ class KeyManager:
             "ca_info": self.get_ca_info(),
         }
 
-    def get_ca_cert_pem(self) -> Optional[str]:
+    def get_ca_cert_pem(self) -> str | None:
         """Return the CA cert as PEM string, creating it if needed."""
         self._ensure_ca()
         ca_crt = self.ca_dir / "ca.crt"
@@ -363,9 +343,7 @@ class KeyManager:
     # Key pair + client cert generation
     # -------------------------------------------------------------------
 
-    def generate_key_pair(
-        self, name: str, key_size: int = DEFAULT_SIZE
-    ) -> Dict[str, Any]:
+    def generate_key_pair(self, name: str, key_size: int = DEFAULT_SIZE) -> dict[str, Any]:
         """
         Generate an RSA key pair and issue a client certificate signed by
         the local CA. The certificate can be used for mTLS authentication.
@@ -381,20 +359,18 @@ class KeyManager:
             KeyManagerError: If generation fails
         """
         try:
+            from cryptography import x509
             from cryptography.hazmat.primitives import hashes, serialization
             from cryptography.hazmat.primitives.asymmetric import rsa
             from cryptography.hazmat.primitives.serialization import pkcs12
-            from cryptography import x509
-            from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
-        except ImportError:
+            from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+        except ImportError as exc:
             raise KeyManagerError(
                 "cryptography package is required. Install: pip install cryptography"
-            )
+            ) from exc
 
         if key_size not in self.SUPPORTED_SIZES:
-            raise KeyManagerError(
-                f"Unsupported key size: {key_size}. Use {self.SUPPORTED_SIZES}"
-            )
+            raise KeyManagerError(f"Unsupported key size: {key_size}. Use {self.SUPPORTED_SIZES}")
 
         ca_key, ca_cert = self._ensure_ca()
 
@@ -404,9 +380,7 @@ class KeyManager:
 
         try:
             # Generate RSA key pair
-            private_key = rsa.generate_private_key(
-                public_exponent=65537, key_size=key_size
-            )
+            private_key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
             public_key = private_key.public_key()
 
             # Build client cert signed by the CA
@@ -416,7 +390,7 @@ class KeyManager:
                     x509.NameAttribute(NameOID.ORGANIZATION_NAME, "DMZ-API"),
                 ]
             )
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             client_cert = (
                 x509.CertificateBuilder()
                 .subject_name(subject)
@@ -425,9 +399,7 @@ class KeyManager:
                 .serial_number(x509.random_serial_number())
                 .not_valid_before(now)
                 .not_valid_after(now + timedelta(days=self.CERT_VALIDITY_DAYS))
-                .add_extension(
-                    x509.BasicConstraints(ca=False, path_length=None), critical=True
-                )
+                .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
                 .add_extension(
                     x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]),
                     critical=False,
@@ -491,19 +463,14 @@ class KeyManager:
                 "cert_subject": f"CN={name},O=DMZ-API",
                 "cert_issuer": "CN=DMZ-API Internal CA,O=DMZ-API",
                 "cert_not_before": now.isoformat(),
-                "cert_not_after": (
-                    now + timedelta(days=self.CERT_VALIDITY_DAYS)
-                ).isoformat(),
+                "cert_not_after": (now + timedelta(days=self.CERT_VALIDITY_DAYS)).isoformat(),
                 "serial_number": str(client_cert.serial_number),
                 "pfx_password": self.DEFAULT_PFX_PASSWORD,
             }
-            (key_dir / "metadata.json").write_text(
-                json.dumps(metadata, indent=2), encoding="utf-8"
-            )
+            (key_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
             logger.info(
-                f"Generated key pair + client cert: id={key_id}, name={name}, "
-                f"size={key_size}"
+                f"Generated key pair + client cert: id={key_id}, name={name}, size={key_size}"
             )
             return metadata
 
@@ -518,7 +485,7 @@ class KeyManager:
     # Listing, retrieval, revocation
     # -------------------------------------------------------------------
 
-    def list_keys(self) -> List[Dict[str, Any]]:
+    def list_keys(self) -> list[dict[str, Any]]:
         """List all key pairs with metadata, newest first. Skips the CA."""
         keys = []
         if not self.keys_dir.exists():
@@ -538,7 +505,7 @@ class KeyManager:
         keys.sort(key=lambda k: k.get("created", ""), reverse=True)
         return keys
 
-    def get_key(self, key_id: str) -> Optional[Dict[str, Any]]:
+    def get_key(self, key_id: str) -> dict[str, Any] | None:
         """Get metadata for a specific key."""
         metadata_path = self.keys_dir / key_id / "metadata.json"
         if not metadata_path.exists():
@@ -548,12 +515,12 @@ class KeyManager:
         except (json.JSONDecodeError, OSError):
             return None
 
-    def get_public_key_pem(self, key_id: str) -> Optional[str]:
+    def get_public_key_pem(self, key_id: str) -> str | None:
         """Return the public key PEM string."""
         p = self.keys_dir / key_id / "public.pem"
         return p.read_text(encoding="utf-8") if p.exists() else None
 
-    def get_file(self, key_id: str, filename: str) -> Optional[Path]:
+    def get_file(self, key_id: str, filename: str) -> Path | None:
         """
         Return a Path to a file inside a key directory, if it exists and is
         one of the allowed export filenames.

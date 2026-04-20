@@ -18,7 +18,6 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from .utils import setup_logging
 
@@ -27,8 +26,6 @@ logger = setup_logging("whitelist")
 
 class WhitelistError(Exception):
     """Exception raised for whitelist operations."""
-
-    pass
 
 
 class ProjectWhitelist:
@@ -50,7 +47,7 @@ class ProjectWhitelist:
         }
     """
 
-    def __init__(self, file_path: Optional[str] = None):
+    def __init__(self, file_path: str | None = None):
         """
         Initialize the project whitelist.
 
@@ -62,7 +59,7 @@ class ProjectWhitelist:
             file_path or os.environ.get("WHITELIST_FILE_PATH", "./data/whitelist.json")
         )
         self._lock = threading.Lock()
-        self._cache: Dict[str, dict] = {}
+        self._cache: dict[str, dict] = {}
         self._last_mtime: float = 0
         self._init_file()
 
@@ -76,18 +73,18 @@ class ProjectWhitelist:
         else:
             logger.info(f"Using whitelist file: {self.file_path}")
 
-    def _read_data(self) -> Dict[str, dict]:
+    def _read_data(self) -> dict[str, dict]:
         """Read and parse the whitelist file."""
         try:
-            with open(self.file_path, "r", encoding="utf-8") as f:
+            with open(self.file_path, encoding="utf-8") as f:
                 data = json.load(f)
             return data.get("projects", {})
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in whitelist file: {e}")
-            raise WhitelistError(f"Invalid whitelist file format: {e}")
+            raise WhitelistError(f"Invalid whitelist file format: {e}") from e
         except OSError as e:
             logger.error(f"Failed to read whitelist file: {e}")
-            raise WhitelistError(f"Failed to read whitelist file: {e}")
+            raise WhitelistError(f"Failed to read whitelist file: {e}") from e
 
     def _write_data(self, data: dict) -> None:
         """Write data to the whitelist file atomically."""
@@ -101,9 +98,9 @@ class ProjectWhitelist:
         except OSError as e:
             if tmp_path.exists():
                 tmp_path.unlink()
-            raise WhitelistError(f"Failed to write whitelist file: {e}")
+            raise WhitelistError(f"Failed to write whitelist file: {e}") from e
 
-    def _get_projects(self) -> Dict[str, dict]:
+    def _get_projects(self) -> dict[str, dict]:
         """
         Get projects dict, reloading from file if modified.
 
@@ -122,7 +119,7 @@ class ProjectWhitelist:
 
             return self._cache
 
-    def _save_projects(self, projects: Dict[str, dict]) -> None:
+    def _save_projects(self, projects: dict[str, dict]) -> None:
         """Save projects to file and update cache."""
         with self._lock:
             self._write_data({"projects": projects})
@@ -231,7 +228,7 @@ class ProjectWhitelist:
         logger.info(f"Project removed: {project_code}")
         return True
 
-    def list_projects(self) -> List[Tuple[str, bool]]:
+    def list_projects(self) -> list[tuple[str, bool]]:
         """
         List all projects in the whitelist.
 
@@ -239,10 +236,7 @@ class ProjectWhitelist:
             List of tuples (project_code, enabled)
         """
         projects = self._get_projects()
-        return sorted(
-            [(code, proj.get("enabled", False)) for code, proj in projects.items()]
-        )
+        return sorted([(code, proj.get("enabled", False)) for code, proj in projects.items()])
 
     def close(self) -> None:
         """No-op for API compatibility (file-based needs no cleanup)."""
-        pass

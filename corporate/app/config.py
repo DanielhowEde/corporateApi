@@ -8,7 +8,7 @@ A config file (config.json) can optionally be used to set defaults.
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from .utils import setup_logging
 
@@ -46,7 +46,6 @@ class Config:
         "KEYS_DIR": "./data/keys",
         # Pending messages directory (auto-send disabled)
         "PENDING_DIR": "./data/pending",
-
         # Default retention for message history, in days.
         # Used as the pre-filled value on the History "Clear" form.
         "HISTORY_RETENTION_DAYS": "7",
@@ -61,8 +60,8 @@ class Config:
     }
 
     _instance: Optional["Config"] = None
-    _config: Dict[str, Any] = {}
-    _config_file_path: Optional[Path] = None
+    _config: dict[str, Any] = {}
+    _config_file_path: Path | None = None
 
     def __new__(cls):
         """Singleton pattern - only one config instance."""
@@ -80,7 +79,7 @@ class Config:
         config_file = Path(os.environ.get("CONFIG_FILE", "./config.json"))
         if config_file.exists():
             try:
-                with open(config_file, "r", encoding="utf-8") as f:
+                with open(config_file, encoding="utf-8") as f:
                     file_config = json.load(f)
                 self._config.update(file_config)
                 self._config_file_path = config_file
@@ -89,7 +88,7 @@ class Config:
                 logger.warning(f"Failed to load config file {config_file}: {e}")
 
         # Override with environment variables
-        for key in self.DEFAULTS.keys():
+        for key in self.DEFAULTS:
             env_value = os.environ.get(key)
             if env_value is not None:
                 self._config[key] = env_value

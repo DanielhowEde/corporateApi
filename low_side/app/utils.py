@@ -52,8 +52,7 @@ def setup_logging(service_name: str) -> logging.Logger:
         handler.setLevel(logging.INFO)
 
         formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - "
-            "[request_id=%(request_id)s] - %(message)s"
+            "%(asctime)s - %(name)s - %(levelname)s - [request_id=%(request_id)s] - %(message)s"
         )
         handler.setFormatter(formatter)
         handler.addFilter(RequestIdFilter())

@@ -6,16 +6,15 @@ File structure: ${MASTER_DIR}/${Project}/{message_id}.json
 This keeps messages organized by project for easy management and retrieval.
 """
 
+import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
 class FileStoreError(Exception):
     """Exception raised when file storage operations fail."""
-
-    pass
 
 
 class FileStore:
@@ -35,9 +34,7 @@ class FileStore:
     3. Rename to final destination (atomic on POSIX)
     """
 
-    def __init__(
-        self, master_dir: str = None, tmp_dir: str = None, error_dir: str = None
-    ):
+    def __init__(self, master_dir: str = None, tmp_dir: str = None, error_dir: str = None):
         """
         Initialize file store.
 
@@ -107,7 +104,7 @@ class FileStore:
         """
         return self.tmp_dir / f"{message_id}.json.tmp"
 
-    def write_message(self, message_data: Dict[str, Any]) -> Path:
+    def write_message(self, message_data: dict[str, Any]) -> Path:
         """
         Write a message to disk atomically.
 
@@ -147,23 +144,17 @@ class FileStore:
             return final_path
 
         except OSError as e:
-            # Clean up temporary file if it exists
             if tmp_path.exists():
-                try:
+                with contextlib.suppress(OSError):
                     tmp_path.unlink()
-                except OSError:
-                    pass
             raise FileStoreError(f"Failed to write message file: {e}") from e
         except Exception as e:
-            # Clean up temporary file if it exists
             if tmp_path.exists():
-                try:
+                with contextlib.suppress(OSError):
                     tmp_path.unlink()
-                except OSError:
-                    pass
             raise FileStoreError(f"Unexpected error writing message file: {e}") from e
 
-    def write_error(self, error_data: Dict[str, Any]) -> Path:
+    def write_error(self, error_data: dict[str, Any]) -> Path:
         """
         Write an error record to the error directory.
 
@@ -197,13 +188,13 @@ class FileStore:
         except OSError as e:
             raise FileStoreError(f"Failed to write error file: {e}") from e
 
-    def read_message(self, message_id: str, project: str) -> Dict[str, Any]:
+    def read_message(self, message_id: str, project: str) -> dict[str, Any]:
         """Read a stored message from disk."""
         file_path = self._get_final_path(message_id, project)
         if not file_path.exists():
             raise FileStoreError(f"Message not found: {message_id}")
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             raise FileStoreError(f"Failed to read message: {e}") from e
@@ -213,7 +204,7 @@ class FileStore:
         project_filter: str = "",
         search_query: str = "",
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Return stored messages, newest first, optionally filtered.
 
@@ -223,7 +214,7 @@ class FileStore:
                           Area, Status, Project
             limit: Max number of messages to return
         """
-        messages: List[Dict[str, Any]] = []
+        messages: list[dict[str, Any]] = []
         projects = [project_filter] if project_filter else self.list_projects()
 
         for proj in projects:
@@ -234,7 +225,7 @@ class FileStore:
                 if not (f.is_file() and f.suffix == ".json"):
                     continue
                 try:
-                    with open(f, "r", encoding="utf-8") as fh:
+                    with open(f, encoding="utf-8") as fh:
                         msg = json.load(fh)
                     msg["_file_mtime"] = f.stat().st_mtime
                     messages.append(msg)
@@ -312,7 +303,7 @@ class FileStore:
         """
         return self._ensure_project_dir(project)
 
-    def list_projects(self) -> List[str]:
+    def list_projects(self) -> list[str]:
         """
         List all projects that have message directories.
 
@@ -329,7 +320,7 @@ class FileStore:
             ]
         )
 
-    def list_messages(self, project: str) -> List[str]:
+    def list_messages(self, project: str) -> list[str]:
         """
         List all message IDs in a project directory.
 
@@ -343,9 +334,5 @@ class FileStore:
         if not project_dir.exists():
             return []
         return sorted(
-            [
-                f.stem
-                for f in project_dir.iterdir()
-                if f.is_file() and f.suffix == ".json"
-            ]
+            [f.stem for f in project_dir.iterdir() if f.is_file() and f.suffix == ".json"]
         )

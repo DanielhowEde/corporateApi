@@ -10,8 +10,8 @@ Messages must be cert-wrapped before being sent to the DMZ Gateway.
 """
 
 import asyncio
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -23,13 +23,9 @@ logger = setup_logging("cert_client")
 class CertGatewayError(Exception):
     """Exception raised when certificate gateway communication fails."""
 
-    pass
-
 
 class CertGatewayUnavailableError(CertGatewayError):
     """Exception raised when the certificate gateway is unavailable."""
-
-    pass
 
 
 class CertClient:
@@ -44,14 +40,12 @@ class CertClient:
     MAX_RETRIES = 2
     INITIAL_BACKOFF = 0.5
 
-    def __init__(
-        self, base_url: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT
-    ):
+    def __init__(self, base_url: str | None = None, timeout: float = DEFAULT_TIMEOUT):
         from .config import config
 
         self.base_url = base_url or config.cert_gateway_url
         self.timeout = timeout
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the async HTTP client."""
@@ -67,7 +61,7 @@ class CertClient:
             await self._client.aclose()
             self._client = None
 
-    async def wrap_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def wrap_message(self, message_data: dict[str, Any]) -> dict[str, Any]:
         """
         Send a message to the certificate gateway to be wrapped with a JWT.
 
@@ -92,7 +86,7 @@ class CertClient:
         message_id = message_data.get("ID", "unknown")
 
         client = await self._get_client()
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
@@ -109,32 +103,25 @@ class CertClient:
                     logger.warning(
                         f"Cert gateway returned {response.status_code}: message_id={message_id}"
                     )
-                    last_error = CertGatewayError(
-                        f"Cert gateway returned {response.status_code}"
-                    )
+                    last_error = CertGatewayError(f"Cert gateway returned {response.status_code}")
 
                     if attempt < self.MAX_RETRIES:
                         backoff = self.INITIAL_BACKOFF * (2**attempt)
                         await asyncio.sleep(backoff)
                         continue
-                    else:
-                        raise CertGatewayUnavailableError(
-                            f"Cert gateway unavailable after {self.MAX_RETRIES + 1} attempts"
-                        )
+                    raise CertGatewayUnavailableError(
+                        f"Cert gateway unavailable after {self.MAX_RETRIES + 1} attempts"
+                    )
 
                 if response.status_code >= 400:
                     logger.error(
                         f"Cert gateway rejected message: message_id={message_id}, "
                         f"status={response.status_code}"
                     )
-                    raise CertGatewayError(
-                        f"Cert gateway rejected message: {response.status_code}"
-                    )
+                    raise CertGatewayError(f"Cert gateway rejected message: {response.status_code}")
 
                 wrapped = response.json()
-                logger.info(
-                    f"Message cert-wrapped successfully: message_id={message_id}"
-                )
+                logger.info(f"Message cert-wrapped successfully: message_id={message_id}")
                 return wrapped
 
             except httpx.TimeoutException as e:
@@ -166,7 +153,7 @@ class CertClient:
         )
 
     @staticmethod
-    def is_cert_expired(wrapped_message: Dict[str, Any]) -> bool:
+    def is_cert_expired(wrapped_message: dict[str, Any]) -> bool:
         """
         Check if the JWT certificate on a wrapped message has expired.
 
@@ -182,14 +169,14 @@ class CertClient:
         try:
             expiry = datetime.fromisoformat(expires_at)
             if expiry.tzinfo is None:
-                expiry = expiry.replace(tzinfo=timezone.utc)
-            return datetime.now(timezone.utc) >= expiry
+                expiry = expiry.replace(tzinfo=UTC)
+            return datetime.now(UTC) >= expiry
         except (ValueError, TypeError):
             logger.warning(f"Invalid expires_at format: {expires_at}")
             return True
 
     @staticmethod
-    def seconds_until_expiry(wrapped_message: Dict[str, Any]) -> float:
+    def seconds_until_expiry(wrapped_message: dict[str, Any]) -> float:
         """
         Get seconds remaining until the cert expires.
 
@@ -205,8 +192,8 @@ class CertClient:
         try:
             expiry = datetime.fromisoformat(expires_at)
             if expiry.tzinfo is None:
-                expiry = expiry.replace(tzinfo=timezone.utc)
-            remaining = (expiry - datetime.now(timezone.utc)).total_seconds()
+                expiry = expiry.replace(tzinfo=UTC)
+            remaining = (expiry - datetime.now(UTC)).total_seconds()
             return max(0, remaining)
         except (ValueError, TypeError):
             return 0

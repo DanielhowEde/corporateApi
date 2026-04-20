@@ -12,20 +12,20 @@ Security Assumptions:
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
+from . import auth as low_auth
+from . import user
 from .cert_store import CertStore, CertStoreError
 from .file_store import FileStore, FileStoreError
 from .gateway_client import GatewayClient, GatewayError, GatewayUnavailableError
 from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
 from .utils import generate_request_id, set_request_id, setup_logging
-from . import auth as low_auth
-from . import user
 
 # Configure logging
 logger = setup_logging("low_side_api")
@@ -37,7 +37,7 @@ cert_store: CertStore
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """Application lifespan manager for startup/shutdown."""
     global file_store, gateway_client, cert_store
 
@@ -125,9 +125,7 @@ async def verify_gateway_origin(request: Request) -> bool:
     return True
 
 
-def _store_error(
-    error_type: str, message: str, message_id: str = "", request_id: str = ""
-):
+def _store_error(error_type: str, message: str, message_id: str = "", request_id: str = ""):
     """Best-effort write of an error record to the error directory."""
     try:
         file_store.write_error(
@@ -155,9 +153,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
     return JSONResponse(
         status_code=exc.status_code,
-        content=ErrorResponse(
-            request_id=request_id, error="Invalid request"
-        ).model_dump(),
+        content=ErrorResponse(request_id=request_id, error="Invalid request").model_dump(),
     )
 
 
@@ -169,9 +165,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=ErrorResponse(
-            request_id=request_id, error="Invalid request"
-        ).model_dump(),
+        content=ErrorResponse(request_id=request_id, error="Invalid request").model_dump(),
     )
 
 
@@ -200,7 +194,7 @@ async def health_check() -> HealthResponse:
     },
     tags=["Messages"],
 )
-async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResponse:
+async def send_message(request: Request, message: dict[str, Any]) -> SuccessResponse:
     """
     Send a message to the DMZ Gateway (outbound).
 
@@ -226,9 +220,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
     try:
         validated_message = Message.model_validate(message)
     except ValidationError as e:
-        logger.warning(
-            f"Schema validation failed: message={message}, errors={e.errors()}"
-        )
+        logger.warning(f"Schema validation failed: message={message}, errors={e.errors()}")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content=ErrorResponse(request_id=request_id).model_dump(),
@@ -270,7 +262,7 @@ async def send_message(request: Request, message: Dict[str, Any]) -> SuccessResp
     },
     tags=["DMZ"],
 )
-async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessResponse:
+async def receive_message(request: Request, message: dict[str, Any]) -> SuccessResponse:
     """
     Receive a message from the DMZ Gateway (inbound).
 
@@ -316,12 +308,8 @@ async def receive_message(request: Request, message: Dict[str, Any]) -> SuccessR
 
     # Write to disk atomically
     try:
-        file_path = file_store.write_message(
-            validated_message.model_dump(by_alias=True)
-        )
-        logger.info(
-            f"Message written to disk: message_id={message_id}, path={file_path}"
-        )
+        file_path = file_store.write_message(validated_message.model_dump(by_alias=True))
+        logger.info(f"Message written to disk: message_id={message_id}, path={file_path}")
 
         return SuccessResponse(request_id=request_id, message_id=message_id)
 

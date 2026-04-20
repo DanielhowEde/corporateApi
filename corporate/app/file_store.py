@@ -6,16 +6,15 @@ File structure: ${MASTER_DIR}/${Project}/{message_id}.json
 This keeps messages organized by project for easy management and retrieval.
 """
 
+import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
 class FileStoreError(Exception):
     """Exception raised when file storage operations fail."""
-
-    pass
 
 
 class FileStore:
@@ -35,9 +34,7 @@ class FileStore:
     3. Rename to final destination (atomic on POSIX)
     """
 
-    def __init__(
-        self, master_dir: str = None, tmp_dir: str = None, error_dir: str = None
-    ):
+    def __init__(self, master_dir: str = None, tmp_dir: str = None, error_dir: str = None):
         """
         Initialize file store.
 
@@ -107,7 +104,7 @@ class FileStore:
         """
         return self.tmp_dir / f"{message_id}.json.tmp"
 
-    def write_message(self, message_data: Dict[str, Any]) -> Path:
+    def write_message(self, message_data: dict[str, Any]) -> Path:
         """
         Write a message to disk atomically.
 
@@ -147,23 +144,17 @@ class FileStore:
             return final_path
 
         except OSError as e:
-            # Clean up temporary file if it exists
             if tmp_path.exists():
-                try:
+                with contextlib.suppress(OSError):
                     tmp_path.unlink()
-                except OSError:
-                    pass
             raise FileStoreError(f"Failed to write message file: {e}") from e
         except Exception as e:
-            # Clean up temporary file if it exists
             if tmp_path.exists():
-                try:
+                with contextlib.suppress(OSError):
                     tmp_path.unlink()
-                except OSError:
-                    pass
             raise FileStoreError(f"Unexpected error writing message file: {e}") from e
 
-    def write_error(self, error_data: Dict[str, Any]) -> Path:
+    def write_error(self, error_data: dict[str, Any]) -> Path:
         """
         Write an error record to the error directory.
 
@@ -242,9 +233,7 @@ class FileStore:
 
         return deleted
 
-    def write_pending(
-        self, message_data: Dict[str, Any], wrapped_data: Dict[str, Any]
-    ) -> Path:
+    def write_pending(self, message_data: dict[str, Any], wrapped_data: dict[str, Any]) -> Path:
         """
         Save a cert-wrapped message to the pending directory for later sending.
 
@@ -256,6 +245,7 @@ class FileStore:
             Path to the written pending file
         """
         from datetime import datetime
+
         from .config import config
 
         pending_dir = config.pending_dir
@@ -279,7 +269,7 @@ class FileStore:
         except OSError as e:
             raise FileStoreError(f"Failed to write pending message: {e}") from e
 
-    def list_pending(self) -> List[Dict[str, Any]]:
+    def list_pending(self) -> list[dict[str, Any]]:
         """
         List all pending messages.
 
@@ -296,7 +286,7 @@ class FileStore:
         for f in pending_dir.iterdir():
             if f.is_file() and f.suffix == ".json":
                 try:
-                    with open(f, "r", encoding="utf-8") as fh:
+                    with open(f, encoding="utf-8") as fh:
                         record = json.load(fh)
                     record["_path"] = str(f)
                     records.append(record)
@@ -306,7 +296,7 @@ class FileStore:
         records.sort(key=lambda r: r.get("created", ""), reverse=True)
         return records
 
-    def get_pending(self, message_id: str) -> Dict[str, Any]:
+    def get_pending(self, message_id: str) -> dict[str, Any]:
         """
         Read a pending message by ID.
 
@@ -319,7 +309,7 @@ class FileStore:
         if not pending_path.exists():
             raise FileStoreError(f"Pending message not found: {message_id}")
         try:
-            with open(pending_path, "r", encoding="utf-8") as f:
+            with open(pending_path, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             raise FileStoreError(f"Failed to read pending message: {e}") from e
@@ -342,6 +332,70 @@ class FileStore:
         except OSError:
             return False
 
+    def update_pending_token(
+        self,
+        message_id: str,
+        token: str,
+        expires_at: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Replace the JWT `token` (and optionally `expires_at`) on a pending
+        record. This is a testing hook — lets an admin feed an expired or
+        deliberately-malformed token to the gateway to see how it responds.
+
+        Args:
+            message_id: Pending record to mutate.
+            token:      New JWT string. Stored verbatim, including anything
+                        that would ordinarily fail verification.
+            expires_at: Optional ISO 8601 timestamp. When provided, replaces
+                        the existing expiry. Useful for forcing an expired
+                        state without touching the token bytes.
+
+        Returns:
+            The updated pending record.
+
+        Raises:
+            FileStoreError: If the record doesn't exist or the write fails.
+        """
+        from datetime import datetime
+
+        from .config import config
+
+        pending_path = config.pending_dir / f"{message_id}.json"
+        if not pending_path.exists():
+            raise FileStoreError(f"Pending message not found: {message_id}")
+
+        try:
+            with open(pending_path, encoding="utf-8") as f:
+                record = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise FileStoreError(f"Failed to read pending record: {e}") from e
+
+        wrapped = record.get("wrapped") or {}
+        wrapped["token"] = token
+        if expires_at is not None:
+            wrapped["expires_at"] = expires_at
+        record["wrapped"] = wrapped
+
+        history = record.setdefault("token_edits", [])
+        history.append(
+            {
+                "edited_at": datetime.now().isoformat(),
+                "new_expires_at": wrapped.get("expires_at"),
+                "token_prefix": token[:40],
+            }
+        )
+
+        try:
+            with open(pending_path, "w", encoding="utf-8") as f:
+                json.dump(record, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError as e:
+            raise FileStoreError(f"Failed to save modified pending record: {e}") from e
+
+        return record
+
     def get_project_dir(self, project: str) -> Path:
         """
         Get the directory path for a specific project.
@@ -355,7 +409,7 @@ class FileStore:
         """
         return self._ensure_project_dir(project)
 
-    def list_projects(self) -> List[str]:
+    def list_projects(self) -> list[str]:
         """
         List all projects that have message directories.
 
@@ -372,7 +426,7 @@ class FileStore:
             ]
         )
 
-    def list_messages(self, project: str) -> List[str]:
+    def list_messages(self, project: str) -> list[str]:
         """
         List all message IDs in a project directory.
 
@@ -386,14 +440,10 @@ class FileStore:
         if not project_dir.exists():
             return []
         return sorted(
-            [
-                f.stem
-                for f in project_dir.iterdir()
-                if f.is_file() and f.suffix == ".json"
-            ]
+            [f.stem for f in project_dir.iterdir() if f.is_file() and f.suffix == ".json"]
         )
 
-    def read_message(self, message_id: str, project: str) -> Dict[str, Any]:
+    def read_message(self, message_id: str, project: str) -> dict[str, Any]:
         """
         Read a message from disk.
 
@@ -411,7 +461,7 @@ class FileStore:
         if not file_path.exists():
             raise FileStoreError(f"Message not found: {message_id}")
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             raise FileStoreError(f"Failed to read message: {e}") from e
@@ -421,7 +471,7 @@ class FileStore:
         project_filter: str = "",
         search_query: str = "",
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get all messages across all projects, with optional filtering.
 
@@ -445,7 +495,7 @@ class FileStore:
                 if not (f.is_file() and f.suffix == ".json"):
                     continue
                 try:
-                    with open(f, "r", encoding="utf-8") as fh:
+                    with open(f, encoding="utf-8") as fh:
                         msg = json.load(fh)
                     msg["_file_mtime"] = f.stat().st_mtime
                     messages.append(msg)

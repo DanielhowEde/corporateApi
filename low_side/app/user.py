@@ -11,15 +11,14 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Cookie, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from . import auth
 from .config import config
 from .utils import setup_logging
-from . import auth
 
 logger = setup_logging("low_side_user")
 
@@ -45,7 +44,7 @@ def set_file_store(fs) -> None:
     file_store = fs
 
 
-def _require_auth(session_token: Optional[str]) -> tuple:
+def _require_auth(session_token: str | None) -> tuple:
     """Return (redirect, username). If authenticated: (None, username)."""
     username = auth.verify_user_session(session_token)
     if not username:
@@ -70,7 +69,8 @@ async def login_page(request: Request, error: str = "", message: str = ""):
     return templates.TemplateResponse(
         request,
         "user/login.html",
-        {"title": "Login",
+        {
+            "title": "Login",
             "error": error,
             "message": message,
         },
@@ -78,9 +78,7 @@ async def login_page(request: Request, error: str = "", message: str = ""):
 
 
 @router.post("/login", name="ls_user_login_submit")
-async def login_submit(
-    request: Request, username: str = Form(...), password: str = Form(...)
-):
+async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
     """Handle login form submission."""
     username = username.strip()
 
@@ -94,9 +92,7 @@ async def login_submit(
                 status_code=status.HTTP_303_SEE_OTHER,
             )
         else:
-            response = RedirectResponse(
-                url="/user/", status_code=status.HTTP_303_SEE_OTHER
-            )
+            response = RedirectResponse(url="/user/", status_code=status.HTTP_303_SEE_OTHER)
 
         response.set_cookie(
             key="session_token",
@@ -124,7 +120,7 @@ async def login_submit(
 
 
 @router.get("/logout", name="ls_user_logout")
-async def logout(session_token: Optional[str] = Cookie(None)):
+async def logout(session_token: str | None = Cookie(None)):
     """Logout and invalidate session."""
     if session_token:
         auth.invalidate_session(session_token)
@@ -141,15 +137,13 @@ async def logout(session_token: Optional[str] = Cookie(None)):
 # =============================================================================
 
 
-@router.get(
-    "/change-password", response_class=HTMLResponse, name="ls_user_change_password"
-)
+@router.get("/change-password", response_class=HTMLResponse, name="ls_user_change_password")
 async def change_password_page(
     request: Request,
     required: str = "",
     error: str = "",
     message: str = "",
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Password change page."""
     redirect, username = _require_auth(session_token)
@@ -161,7 +155,8 @@ async def change_password_page(
     return templates.TemplateResponse(
         request,
         "user/change_password.html",
-        {"title": "Change Password",
+        {
+            "title": "Change Password",
             "username": username,
             "is_required": is_required,
             "error": error,
@@ -176,7 +171,7 @@ async def change_password_submit(
     current_password: str = Form(...),
     new_password: str = Form(...),
     confirm_password: str = Form(...),
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Handle password change form submission."""
     redirect, username = _require_auth(session_token)
@@ -222,9 +217,7 @@ async def change_password_submit(
 
 
 @router.get("/", response_class=HTMLResponse, name="ls_user_home")
-async def home(
-    request: Request, message: str = "", session_token: Optional[str] = Cookie(None)
-):
+async def home(request: Request, message: str = "", session_token: str | None = Cookie(None)):
     """User home page."""
     redirect, username = _require_auth(session_token)
     if redirect:
@@ -239,7 +232,8 @@ async def home(
     return templates.TemplateResponse(
         request,
         "user/home.html",
-        {"title": "User Portal",
+        {
+            "title": "User Portal",
             "username": username,
             "message": message,
         },
@@ -251,7 +245,7 @@ async def send_message_page(
     request: Request,
     message: str = "",
     error: str = "",
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Message sending page."""
     redirect, username = _require_auth(session_token)
@@ -274,7 +268,8 @@ async def send_message_page(
     return templates.TemplateResponse(
         request,
         "user/send_message.html",
-        {"title": "Send Message",
+        {
+            "title": "Send Message",
             "username": username,
             "default_id": default_id,
             "default_timestamp": default_timestamp,
@@ -295,12 +290,13 @@ async def send_message_submit(
     timestamp: str = Form(...),
     test_status: str = Form(...),
     data_json: str = Form("{}"),
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Handle message form submission."""
+    from pydantic import ValidationError
+
     from .gateway_client import GatewayError, GatewayUnavailableError
     from .models import Message
-    from pydantic import ValidationError
 
     redirect, username = _require_auth(session_token)
     if redirect:
@@ -348,9 +344,7 @@ async def send_message_submit(
 
     # Per-user project access control (synced from corporate)
     if not auth.user_can_send_to_project(username, validated_message.Project):
-        logger.warning(
-            f"User {username} not authorised for project {validated_message.Project}"
-        )
+        logger.warning(f"User {username} not authorised for project {validated_message.Project}")
         return RedirectResponse(
             url=f"/user/send?error=You+are+not+authorised+to+send+to+{validated_message.Project}",
             status_code=status.HTTP_303_SEE_OTHER,
@@ -394,7 +388,7 @@ async def history_page(
     page: int = 1,
     message: str = "",
     error: str = "",
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Low-side message history with filtering, search, and pagination (20 per page)."""
     redirect, username = _require_auth(session_token)
@@ -422,12 +416,13 @@ async def history_page(
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
     page = max(1, min(page, total_pages))
     start = (page - 1) * PER_PAGE
-    messages_list = all_messages[start:start + PER_PAGE]
+    messages_list = all_messages[start : start + PER_PAGE]
 
     return templates.TemplateResponse(
         request,
         "user/history.html",
-        {"title": "Message History",
+        {
+            "title": "Message History",
             "username": username,
             "messages": messages_list,
             "projects": sorted(set(projects_list)),
@@ -450,7 +445,7 @@ async def history_page(
 async def history_clear(
     request: Request,
     older_than_days: int = Form(0),
-    session_token: Optional[str] = Cookie(None),
+    session_token: str | None = Cookie(None),
 ):
     """Delete stored history messages older than N days (0 = all)."""
     redirect, username = _require_auth(session_token)
@@ -466,9 +461,7 @@ async def history_clear(
     days = max(0, int(older_than_days))
     deleted = file_store.clear_messages(older_than_days=days)
     scope = "all" if days == 0 else f"older+than+{days}+day(s)"
-    logger.info(
-        f"User {username} cleared history: older_than_days={days}, deleted={deleted}"
-    )
+    logger.info(f"User {username} cleared history: older_than_days={days}, deleted={deleted}")
     return RedirectResponse(
         url=f"/user/history?message=Cleared+{deleted}+message(s)+({scope})",
         status_code=status.HTTP_303_SEE_OTHER,
