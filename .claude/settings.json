@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(python -m pytest tests/test_password_policy.py -v)",
-      "Bash(python -m pytest tests/test_audit.py -v)"
+      "Bash(python -m pytest tests/test_audit.py -v)",
+      "Bash(python -m ruff check --fix .)",
+      "Bash(python -m ruff check .)",
+      "Bash(python -m ruff format .)"
     ]
   }
 }

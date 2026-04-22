@@ -26,7 +26,7 @@ def isolate_users(tmp_path, monkeypatch):
         "",
         "short",
         "onlyletters",  # no digit, no upper, no symbol
-        "Password1",    # only 9 chars
+        "Password1",  # only 9 chars
         "Password12!",  # 11 chars, just under min
         "alllowercase1!",
         "ALLUPPERCASE1!",
@@ -45,8 +45,8 @@ def test_validate_rejects_weak(password):
 @pytest.mark.parametrize(
     "password",
     [
-        "GoodPass123!",       # exactly 12, one of each
-        "LongerPassword9$",   # longer, mixed
+        "GoodPass123!",  # exactly 12, one of each
+        "LongerPassword9$",  # longer, mixed
         "AnotherValid1@abc",  # 17 chars
     ],
 )

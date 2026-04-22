@@ -142,8 +142,8 @@ def test_order_shuffle_returns_all_but_not_input_order(ordered_pending_env):
     """
     client, ids, forwarded = ordered_pending_env
     from app import main
-    from app.file_store import FileStore
     from app.config import config
+    from app.file_store import FileStore
 
     saw_non_identity = False
     for _ in range(20):

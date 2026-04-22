@@ -5,10 +5,9 @@ import os
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.file_store import FileStore, FileStoreError
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -149,9 +148,7 @@ class TestFileStore:
 class TestReceiveEndpointFileWriting:
     """Integration tests for /dmz/messages file writing."""
 
-    def test_receive_writes_file_to_disk(
-        self, client, valid_message, tmp_path, monkeypatch
-    ):
+    def test_receive_writes_file_to_disk(self, client, valid_message, tmp_path, monkeypatch):
         """Test that receiving a message writes it to disk."""
         master_dir = tmp_path / "messages"
         tmp_dir = tmp_path / "tmp"
@@ -191,9 +188,7 @@ class TestReceiveEndpointFileWriting:
         assert data["error"] == "Invalid request"
         assert "disk" not in data["error"].lower()
 
-    def test_receive_response_includes_message_id(
-        self, client, valid_message, tmp_path
-    ):
+    def test_receive_response_includes_message_id(self, client, valid_message, tmp_path):
         """Test that success response includes the message ID."""
         master_dir = tmp_path / "messages"
         tmp_dir = tmp_path / "tmp"
@@ -217,9 +212,7 @@ class TestReceiveEndpointFileWriting:
 class TestFileStoreErrorHandling:
     """Tests for FileStore error handling."""
 
-    def test_write_wraps_filesystem_error_as_FileStoreError(
-        self, tmp_path, valid_message
-    ):
+    def test_write_wraps_filesystem_error_as_FileStoreError(self, tmp_path, valid_message):
         """
         write_message() must wrap any OS-level filesystem failure in
         FileStoreError so callers have a single exception type to catch.

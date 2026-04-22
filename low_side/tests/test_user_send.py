@@ -22,7 +22,8 @@ def configured_user_client(tmp_path, monkeypatch):
       - mocked gateway_client so sends don't leave the process
       - active session cookie for 'tester'
     """
-    from app import main, auth, user as user_module
+    from app import auth, main
+    from app import user as user_module
 
     users_path = tmp_path / "users.json"
     monkeypatch.setattr(auth, "USERS_FILE_PATH", users_path)
@@ -71,8 +72,9 @@ def test_send_accepts_aligned_schema(configured_user_client):
 
     assert r.status_code in (200, 303), f"unexpected status: {r.status_code} {r.text[:200]}"
     if r.status_code == 303:
-        assert "error=" not in r.headers.get("location", ""), \
+        assert "error=" not in r.headers.get("location", ""), (
             f"unexpected error redirect: {r.headers.get('location')}"
+        )
 
 
 def test_send_rejects_missing_area(configured_user_client):

@@ -24,7 +24,8 @@ def audit_env(tmp_path, monkeypatch):
     `config.master_dir.parent / "audit"`, so we point MASTER_DIR at a
     temp path before the audit module resolves anything.
     """
-    from app import config as config_module, auth
+    from app import auth
+    from app import config as config_module
 
     config_module.config._config["MASTER_DIR"] = str(tmp_path / "messages")
     monkeypatch.setattr(auth, "USERS_FILE_PATH", tmp_path / "users.json")
@@ -86,9 +87,7 @@ def test_record_failed_login_persists_event(audit_env):
 def test_record_failed_login_normalises_unknown_source(audit_env):
     from app import audit
 
-    event = audit.record_failed_login(
-        username="x", source="bogus-source", reason="bad_password"
-    )
+    event = audit.record_failed_login(username="x", source="bogus-source", reason="bad_password")
     assert event["source"] == "unknown"
 
 
@@ -148,10 +147,7 @@ def test_corporate_user_login_failure_recorded(audit_env):
     assert r.status_code == 303
 
     events = _read_today_events(audit_env)
-    assert any(
-        e["source"] == "corporate-user" and e["username"] == "alice"
-        for e in events
-    )
+    assert any(e["source"] == "corporate-user" and e["username"] == "alice" for e in events)
 
 
 def test_corporate_admin_login_failure_recorded(audit_env):
@@ -166,10 +162,7 @@ def test_corporate_admin_login_failure_recorded(audit_env):
     assert r.status_code == 303
 
     events = _read_today_events(audit_env)
-    assert any(
-        e["source"] == "corporate-admin" and e["username"] == "rootadmin"
-        for e in events
-    )
+    assert any(e["source"] == "corporate-admin" and e["username"] == "rootadmin" for e in events)
 
 
 def test_successful_login_does_not_record(audit_env):
@@ -239,7 +232,7 @@ def test_admin_audit_page_requires_auth(audit_env):
 
 
 def test_admin_audit_page_renders_events(audit_env):
-    from app import main, auth, audit
+    from app import audit, auth, main
 
     # Seed an event
     audit.record_failed_login("alice", "corporate-user", "bad_password")

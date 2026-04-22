@@ -18,9 +18,10 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def configured_user_client(tmp_path, monkeypatch):
     """Corporate app with a logged-in user + whitelist with AAA, BBB, CCC."""
-    from app import main, auth, user as user_module
-    from app.whitelist import ProjectWhitelist
+    from app import auth, main
+    from app import user as user_module
     from app.file_store import FileStore
+    from app.whitelist import ProjectWhitelist
 
     monkeypatch.setattr(auth, "USERS_FILE_PATH", tmp_path / "users.json")
     auth._save_users(
@@ -123,9 +124,10 @@ def test_send_page_dropdown_only_shows_allowed_projects(configured_user_client):
 
 def test_send_page_shows_warning_when_no_projects(tmp_path, monkeypatch):
     """User with empty allowed_projects sees a warning banner."""
-    from app import main, auth, user as user_module
-    from app.whitelist import ProjectWhitelist
+    from app import auth, main
+    from app import user as user_module
     from app.file_store import FileStore
+    from app.whitelist import ProjectWhitelist
 
     monkeypatch.setattr(auth, "USERS_FILE_PATH", tmp_path / "users.json")
     auth._save_users(
@@ -164,9 +166,7 @@ def test_send_page_shows_warning_when_no_projects(tmp_path, monkeypatch):
 
 def test_send_rejects_project_user_not_granted(configured_user_client):
     """BBB is whitelisted but tester doesn't have it — must be rejected."""
-    r = configured_user_client.post(
-        "/user/send", data=_payload("BBB"), follow_redirects=False
-    )
+    r = configured_user_client.post("/user/send", data=_payload("BBB"), follow_redirects=False)
     assert r.status_code == 303
     location = r.headers.get("location", "")
     assert "error=" in location
@@ -175,9 +175,7 @@ def test_send_rejects_project_user_not_granted(configured_user_client):
 
 def test_send_accepts_project_user_is_granted(configured_user_client):
     """AAA is in tester's allowed list — must succeed."""
-    r = configured_user_client.post(
-        "/user/send", data=_payload("AAA"), follow_redirects=False
-    )
+    r = configured_user_client.post("/user/send", data=_payload("AAA"), follow_redirects=False)
     assert r.status_code in (200, 303)
     if r.status_code == 303:
         assert "error=" not in r.headers.get("location", "")
@@ -189,9 +187,10 @@ def test_send_accepts_project_user_is_granted(configured_user_client):
 @pytest.fixture
 def admin_client(tmp_path, monkeypatch):
     """Corporate app with a logged-in admin + test user + whitelist."""
-    from app import main, auth, admin as admin_module
-    from app.whitelist import ProjectWhitelist
+    from app import admin as admin_module
+    from app import auth, main
     from app.file_store import FileStore
+    from app.whitelist import ProjectWhitelist
 
     monkeypatch.setattr(auth, "USERS_FILE_PATH", tmp_path / "users.json")
     auth._save_users(
@@ -255,9 +254,7 @@ def test_admin_can_clear_user_allowed_projects(admin_client):
     assert auth.get_user_allowed_projects("tester") == ["AAA"]
 
     # Submit with no checkboxes = empty list
-    r = admin_client.post(
-        "/admin/users/tester/projects", data={}, follow_redirects=False
-    )
+    r = admin_client.post("/admin/users/tester/projects", data={}, follow_redirects=False)
     assert r.status_code == 303
     assert auth.get_user_allowed_projects("tester") == []
 

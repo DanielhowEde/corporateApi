@@ -1,6 +1,5 @@
 """Pytest configuration and fixtures for CORPORATE API tests."""
 
-
 import pytest
 
 

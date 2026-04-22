@@ -4,9 +4,8 @@ import json
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.file_store import FileStore, FileStoreError
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -91,8 +90,8 @@ class TestReceiveEndpointWithWhitelist:
         whitelist_path = tmp_path / "whitelist.json"
 
         from app import main
-        from app.whitelist import ProjectWhitelist
         from app.file_store import FileStore
+        from app.whitelist import ProjectWhitelist
 
         main.whitelist = ProjectWhitelist(file_path=str(whitelist_path))
         main.file_store = FileStore(
@@ -104,9 +103,7 @@ class TestReceiveEndpointWithWhitelist:
 
         return TestClient(main.app), master_dir
 
-    def test_receive_writes_file_when_whitelisted(
-        self, configured_client, valid_message
-    ):
+    def test_receive_writes_file_when_whitelisted(self, configured_client, valid_message):
         """Test that receiving a message writes it to disk when whitelisted."""
         client, master_dir = configured_client
 
@@ -121,9 +118,7 @@ class TestReceiveEndpointWithWhitelist:
             written_data = json.load(f)
         assert written_data["ID"] == valid_message["ID"]
 
-    def test_receive_returns_500_on_disk_error(
-        self, configured_client, valid_message, mocker
-    ):
+    def test_receive_returns_500_on_disk_error(self, configured_client, valid_message, mocker):
         """Test that disk write errors return 500 with generic error."""
         client, _ = configured_client
 

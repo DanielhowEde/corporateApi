@@ -8,7 +8,6 @@ Covers:
   - Send Now after edit forwards the modified envelope to the gateway
 """
 
-import json
 import uuid
 
 import pytest
@@ -99,9 +98,7 @@ def pending_client(tmp_path, monkeypatch):
 def test_update_pending_token_replaces_token(pending_client):
     _, fs, message_id, _ = pending_client
 
-    record = fs.update_pending_token(
-        message_id, token="TOTALLY.NEW.TOKEN"
-    )
+    record = fs.update_pending_token(message_id, token="TOTALLY.NEW.TOKEN")
     assert record["wrapped"]["token"] == "TOTALLY.NEW.TOKEN"
     # expires_at preserved when not supplied
     assert record["wrapped"]["expires_at"] == "2099-01-01T00:00:00+00:00"

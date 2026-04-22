@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def history_client(tmp_path, monkeypatch):
     """Set up low-side with a temp file store + logged-in user."""
-    from app import main, auth, user as user_module
+    from app import auth, main
+    from app import user as user_module
     from app.file_store import FileStore
 
     monkeypatch.setattr(auth, "USERS_FILE_PATH", tmp_path / "users.json")
@@ -63,9 +64,7 @@ def test_clear_all(history_client):
     _seed(fs, "BBB")
     assert len(fs.get_all_messages()) == 2
 
-    r = client.post(
-        "/user/history/clear", data={"older_than_days": 0}, follow_redirects=False
-    )
+    r = client.post("/user/history/clear", data={"older_than_days": 0}, follow_redirects=False)
     assert r.status_code == 303
     assert "Cleared+2+message" in r.headers.get("location", "")
     assert fs.get_all_messages() == []
@@ -76,9 +75,7 @@ def test_clear_only_old(history_client):
     fresh_id = _seed(fs, "AAA", mtime_offset_days=0)
     _seed(fs, "AAA", mtime_offset_days=10)
 
-    r = client.post(
-        "/user/history/clear", data={"older_than_days": 7}, follow_redirects=False
-    )
+    r = client.post("/user/history/clear", data={"older_than_days": 7}, follow_redirects=False)
     assert r.status_code == 303
     assert "Cleared+1+message" in r.headers.get("location", "")
 
@@ -91,9 +88,7 @@ def test_clear_no_matches(history_client):
     client, fs = history_client
     _seed(fs, "AAA")
 
-    r = client.post(
-        "/user/history/clear", data={"older_than_days": 30}, follow_redirects=False
-    )
+    r = client.post("/user/history/clear", data={"older_than_days": 30}, follow_redirects=False)
     assert r.status_code == 303
     assert "Cleared+0+message" in r.headers.get("location", "")
     assert len(fs.get_all_messages()) == 1

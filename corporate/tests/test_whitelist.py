@@ -4,9 +4,8 @@ import json
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.whitelist import ProjectWhitelist, WhitelistError
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -157,8 +156,8 @@ class TestWhitelistIntegration:
         whitelist_path = tmp_path / "whitelist.json"
 
         from app import main
-        from app.whitelist import ProjectWhitelist
         from app.file_store import FileStore
+        from app.whitelist import ProjectWhitelist
 
         main.whitelist = ProjectWhitelist(file_path=str(whitelist_path))
         main.file_store = FileStore(
@@ -169,9 +168,7 @@ class TestWhitelistIntegration:
 
         return TestClient(main.app), main.whitelist
 
-    def test_send_message_project_not_whitelisted(
-        self, configured_client, valid_message
-    ):
+    def test_send_message_project_not_whitelisted(self, configured_client, valid_message):
         """Test that sending a message with non-whitelisted project returns 400."""
         client, _ = configured_client
 
@@ -182,9 +179,7 @@ class TestWhitelistIntegration:
         assert data["success"] is False
         assert data["error"] == "Invalid request"
 
-    def test_send_message_project_whitelisted(
-        self, configured_client, valid_message, mocker
-    ):
+    def test_send_message_project_whitelisted(self, configured_client, valid_message, mocker):
         """Test that sending a message with whitelisted project succeeds."""
         client, whitelist = configured_client
         whitelist.add_project("AAA")
@@ -195,9 +190,7 @@ class TestWhitelistIntegration:
         if not hasattr(main, "gateway_client"):
             main.gateway_client = GatewayClient()
 
-        mocker.patch.object(
-            main.gateway_client, "send_message", return_value={"success": True}
-        )
+        mocker.patch.object(main.gateway_client, "send_message", return_value={"success": True})
 
         response = client.post("/messages", json=valid_message)
 
@@ -216,9 +209,7 @@ class TestWhitelistIntegration:
         data = response.json()
         assert data["success"] is False
 
-    def test_receive_message_project_not_whitelisted(
-        self, configured_client, valid_message
-    ):
+    def test_receive_message_project_not_whitelisted(self, configured_client, valid_message):
         """Test that receiving a message with non-whitelisted project returns 400."""
         client, _ = configured_client
 
@@ -228,9 +219,7 @@ class TestWhitelistIntegration:
         data = response.json()
         assert data["success"] is False
 
-    def test_receive_message_project_whitelisted(
-        self, configured_client, valid_message
-    ):
+    def test_receive_message_project_whitelisted(self, configured_client, valid_message):
         """Test that receiving a message with whitelisted project succeeds."""
         client, whitelist = configured_client
         whitelist.add_project("AAA")
@@ -259,9 +248,7 @@ class TestWhitelistIntegration:
         response = client.post("/dmz/messages", json=valid_message)
         assert response.status_code == 400
 
-    def test_error_does_not_reveal_whitelist_details(
-        self, configured_client, valid_message
-    ):
+    def test_error_does_not_reveal_whitelist_details(self, configured_client, valid_message):
         """Test that error responses don't reveal whitelist details."""
         client, _ = configured_client
 

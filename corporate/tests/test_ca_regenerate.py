@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def admin_env(tmp_path, monkeypatch):
     """Isolated corporate app with a logged-in admin + fresh keys dir."""
-    from app import main, auth
+    from app import auth, main
     from app.key_manager import KeyManager
 
     monkeypatch.setattr(auth, "USERS_FILE_PATH", tmp_path / "users.json")
@@ -36,6 +36,7 @@ def admin_env(tmp_path, monkeypatch):
     # Redirect the key manager at a per-test keys directory
     keys_dir = tmp_path / "keys"
     import app.admin as admin_module
+
     admin_module.key_manager = KeyManager(keys_dir=str(keys_dir))
 
     client = TestClient(main.app)
@@ -86,6 +87,7 @@ def test_regenerate_ca_archives_old_and_builds_new(admin_env):
     # Archive path is returned and exists
     assert result["archived_path"]
     from pathlib import Path
+
     assert Path(result["archived_path"]).exists()
 
     # 1 existing key marked orphaned

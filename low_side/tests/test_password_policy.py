@@ -21,7 +21,7 @@ def isolate_users(tmp_path, monkeypatch):
     [
         "",
         "short",
-        "Password1",       # 9 chars
+        "Password1",  # 9 chars
         "nocapitals12!",
         "NOLOWER123!",
         "NoDigitsABC!",

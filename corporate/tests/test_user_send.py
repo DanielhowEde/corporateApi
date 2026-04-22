@@ -9,7 +9,6 @@ and verify only the aligned form is accepted.
 
 import json
 import uuid
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,9 +22,10 @@ def configured_user_client(tmp_path, monkeypatch):
       - whitelist containing AAA
       - mocked gateway/cert clients so sends don't leave the process
     """
-    from app import main, auth, user as user_module
-    from app.whitelist import ProjectWhitelist
+    from app import auth, main
+    from app import user as user_module
     from app.file_store import FileStore
+    from app.whitelist import ProjectWhitelist
 
     # Point auth at a temp users file
     users_path = tmp_path / "users.json"
@@ -100,8 +100,9 @@ def test_send_accepts_aligned_schema(configured_user_client):
     # Success = either a 200 render or a 303 redirect with `message=...`
     assert r.status_code in (200, 303), f"unexpected status: {r.status_code} {r.text[:200]}"
     if r.status_code == 303:
-        assert "error=" not in r.headers.get("location", ""), \
+        assert "error=" not in r.headers.get("location", ""), (
             f"unexpected error redirect: {r.headers.get('location')}"
+        )
 
 
 def test_send_rejects_missing_area(configured_user_client):

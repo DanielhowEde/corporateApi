@@ -13,7 +13,8 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def audit_client(tmp_path, monkeypatch):
     """Low-side app with seeded users + a mock gateway_client."""
-    from app import main, auth, user as user_module
+    from app import auth, main
+    from app import user as user_module
 
     monkeypatch.setattr(auth, "USERS_FILE_PATH", tmp_path / "users.json")
     auth._save_users(
@@ -95,7 +96,8 @@ def test_successful_login_does_not_report(audit_client):
 def test_gateway_failure_does_not_block_login_flow(tmp_path, monkeypatch):
     """If the gateway report raises, the login flow must still return the
     normal redirect (auth is never blocked by audit pipeline outages)."""
-    from app import main, auth, user as user_module
+    from app import auth, main
+    from app import user as user_module
 
     monkeypatch.setattr(auth, "USERS_FILE_PATH", tmp_path / "users.json")
     auth._save_users(

@@ -94,9 +94,8 @@ def cmd_enable(args, whitelist: ProjectWhitelist) -> int:
     if whitelist.enable_project(project_code):
         print(f"Enabled project '{project_code}'")
         return 0
-    else:
-        print(f"Error: Project '{project_code}' not found")
-        return 1
+    print(f"Error: Project '{project_code}' not found")
+    return 1
 
 
 def cmd_disable(args, whitelist: ProjectWhitelist) -> int:
@@ -110,9 +109,8 @@ def cmd_disable(args, whitelist: ProjectWhitelist) -> int:
     if whitelist.disable_project(project_code):
         print(f"Disabled project '{project_code}'")
         return 0
-    else:
-        print(f"Error: Project '{project_code}' not found")
-        return 1
+    print(f"Error: Project '{project_code}' not found")
+    return 1
 
 
 def cmd_remove(args, whitelist: ProjectWhitelist) -> int:
@@ -126,9 +124,8 @@ def cmd_remove(args, whitelist: ProjectWhitelist) -> int:
     if whitelist.remove_project(project_code):
         print(f"Removed project '{project_code}'")
         return 0
-    else:
-        print(f"Error: Project '{project_code}' not found")
-        return 1
+    print(f"Error: Project '{project_code}' not found")
+    return 1
 
 
 def cmd_list(args, whitelist: ProjectWhitelist) -> int:
@@ -162,9 +159,8 @@ def cmd_check(args, whitelist: ProjectWhitelist) -> int:
     if whitelist.is_project_allowed(project_code):
         print(f"Project '{project_code}' is ALLOWED")
         return 0
-    else:
-        print(f"Project '{project_code}' is NOT ALLOWED")
-        return 1
+    print(f"Project '{project_code}' is NOT ALLOWED")
+    return 1
 
 
 def main():
@@ -210,9 +206,7 @@ You can also edit the whitelist.json file directly.
     disable_parser.add_argument("project_code", help="3-character project code")
 
     # Remove command
-    remove_parser = subparsers.add_parser(
-        "remove", help="Remove a project from whitelist"
-    )
+    remove_parser = subparsers.add_parser("remove", help="Remove a project from whitelist")
     remove_parser.add_argument("project_code", help="3-character project code")
 
     # List command

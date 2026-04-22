@@ -3,10 +3,9 @@
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.main import app
 from app.models import Message
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -35,7 +34,7 @@ class TestMessageModel:
     def test_valid_message_passes_validation(self, valid_message):
         """Test that a valid message passes validation."""
         message = Message.model_validate(valid_message)
-        assert message.ID == valid_message["ID"]
+        assert valid_message["ID"] == message.ID
         assert message.Project == "AAA"
 
     def test_invalid_uuid_fails_validation(self, valid_message):
@@ -147,9 +146,7 @@ class TestSendMessageEndpoint:
         if not hasattr(main, "gateway_client"):
             main.gateway_client = GatewayClient()
 
-        mocker.patch.object(
-            main.gateway_client, "send_message", return_value={"success": True}
-        )
+        mocker.patch.object(main.gateway_client, "send_message", return_value={"success": True})
 
         response = client.post("/messages", json=valid_message)
 
@@ -208,9 +205,7 @@ class TestReceiveMessageEndpoint:
 
     def test_valid_message_accepted(self, client, valid_message, tmp_path, mocker):
         """Test that valid message schema is accepted."""
-        mocker.patch(
-            "app.main.file_store.write_message", return_value=tmp_path / "test.json"
-        )
+        mocker.patch("app.main.file_store.write_message", return_value=tmp_path / "test.json")
 
         response = client.post("/dmz/messages", json=valid_message)
 
