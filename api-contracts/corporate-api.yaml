@@ -163,7 +163,174 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/payloads/{project}:
+    get:
+      summary: List payload templates for a project
+      description: |
+        Returns the names (without `.json`) of every template file directly
+        under `{PAYLOADS_DIR}/{project}/`. Caller must present a client cert
+        whose Common Name is bound to this project.
+      operationId: listTemplates
+      tags:
+        - Programmatic API
+      security:
+        - mTLS: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectCode"
+      responses:
+        "200":
+          description: List of template names
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateListResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/payloads/{project}/schemas:
+    get:
+      summary: List JSON Schemas for a project
+      description: |
+        Returns the names (without `.json`) of every JSON Schema in
+        `{PAYLOADS_DIR}/{project}/Schemas/`.
+      operationId: listProjectSchemas
+      tags:
+        - Programmatic API
+      security:
+        - mTLS: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectCode"
+      responses:
+        "200":
+          description: List of schema names
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchemaListResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/messages/template/{project}/{template_name}:
+    post:
+      summary: Send a message built from a server-side template
+      description: |
+        Loads the named template from `{PAYLOADS_DIR}/{project}/{template_name}.json`,
+        shallow-merges caller-supplied `overrides` over it, regenerates `ID` and
+        `Date` (unless `verbatim: true`), validates against the Message model and
+        every schema under `{project}/Schemas/`, then cert-wraps and forwards via
+        the Gateway.
+      operationId: sendTemplateMessage
+      tags:
+        - Programmatic API
+      security:
+        - mTLS: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectCode"
+        - name: template_name
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+          description: Template filename (without `.json`)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemplateSendRequest"
+      responses:
+        "200":
+          description: Message accepted and forwarded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Invalid request (schema validation failed or malformed input)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Gateway unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/messages/schema/{project}:
+    post:
+      summary: Send a caller-supplied payload validated against project schemas
+      description: |
+        The caller provides the full Message payload. Every JSON Schema under
+        `{project}/Schemas/` must pass before the message is forwarded. The
+        project segment of the payload is overwritten with the path's `{project}`
+        value to prevent cross-project sends.
+      operationId: sendSchemaMessage
+      tags:
+        - Programmatic API
+      security:
+        - mTLS: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Message"
+      responses:
+        "200":
+          description: Message accepted and forwarded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Invalid request (schema validation failed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          description: Gateway unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
+  parameters:
+    ProjectCode:
+      name: project
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Z0-9]{3}$"
+      description: 3-character project code. Must match the project bound to the caller's client cert.
+
+  responses:
+    Forbidden:
+      description: |
+        Forbidden — no client cert presented, or the cert's Common Name is not
+        bound to the requested project.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
   schemas:
     Message:
       type: object
@@ -280,6 +447,55 @@ components:
           enum: ["ok"]
           description: Health status
 
+    TemplateSendRequest:
+      type: object
+      description: Optional caller-supplied controls for template-mode send.
+      additionalProperties: false
+      properties:
+        overrides:
+          type: object
+          description: |
+            Shallow-merged over the template payload before send. Useful for
+            supplying caller-specific `Data`, `Status`, etc. The `Project`
+            field is always overwritten from the URL path.
+          additionalProperties: true
+        verbatim:
+          type: boolean
+          default: false
+          description: |
+            When `true`, the server sends the template exactly as stored and
+            skips ID/Date regeneration. Defaults to `false`, in which case
+            `ID` is replaced with a fresh UUID v4 and `Date` with the current
+            ISO 8601 timestamp.
+
+    TemplateListResponse:
+      type: object
+      required:
+        - project
+        - templates
+      properties:
+        project:
+          type: string
+          pattern: "^[A-Z0-9]{3}$"
+        templates:
+          type: array
+          items:
+            type: string
+
+    SchemaListResponse:
+      type: object
+      required:
+        - project
+        - schemas
+      properties:
+        project:
+          type: string
+          pattern: "^[A-Z0-9]{3}$"
+        schemas:
+          type: array
+          items:
+            type: string
+
   securitySchemes:
     mTLS:
       type: mutualTLS
@@ -300,3 +516,8 @@ tags:
     description: Outbound message operations (corporate → gateway)
   - name: DMZ
     description: Inbound message operations (gateway → corporate)
+  - name: Programmatic API
+    description: |
+      mTLS-authenticated `/api/v1` surface for external callers. Each client
+      cert is bound to a single project; requests for any other project are
+      refused.

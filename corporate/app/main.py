@@ -24,12 +24,13 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from . import admin, audit, user
+from . import admin, api, audit, user
 from .cert_client import CertClient
 from .config import config
 from .file_store import FileStore, FileStoreError
 from .gateway_client import GatewayClient, GatewayError, GatewayUnavailableError
 from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
+from .payload_store import PayloadStore
 from .utils import generate_request_id, set_request_id, setup_logging
 from .whitelist import ProjectWhitelist
 
@@ -69,6 +70,11 @@ async def lifespan(_app: FastAPI):
     user.set_gateway_client(gateway_client)
     user.set_file_store(file_store)
 
+    # Programmatic API (/api/v1) — shares gateway + key manager with admin
+    api.set_gateway_client(gateway_client)
+    api.set_key_manager(admin.key_manager)
+    api.set_payload_store(PayloadStore())
+
     logger.info(f"Message store: {file_store.master_dir}")
     logger.info(f"Gateway URL: {gateway_client.base_url}")
     logger.info(f"Whitelist file: {whitelist.file_path}")
@@ -101,6 +107,9 @@ app.include_router(admin.router)
 
 # Include user routes
 app.include_router(user.router)
+
+# Include programmatic API routes
+app.include_router(api.router)
 
 
 # =============================================================================

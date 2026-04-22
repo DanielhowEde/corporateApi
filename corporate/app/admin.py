@@ -642,6 +642,7 @@ async def admin_generate_key(
     request: Request,
     key_name: str = Form(...),
     key_size: int = Form(2048),
+    key_project: str = Form(""),
     admin_session: str | None = Cookie(None),
 ):
     """Generate a new RSA key pair."""
@@ -655,9 +656,14 @@ async def admin_generate_key(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
+    project = (key_project or "").strip().upper() or None
+
     try:
-        metadata = key_manager.generate_key_pair(name, key_size)
-        logger.info(f"Admin generated key: {metadata['key_id']}, name={name}")
+        metadata = key_manager.generate_key_pair(name, key_size, project=project)
+        logger.info(
+            f"Admin generated key: {metadata['key_id']}, name={name}, "
+            f"project={metadata.get('project') or '-'}"
+        )
 
         # Best-effort sync to low-side via the gateway
         if gateway_client:
@@ -671,6 +677,7 @@ async def admin_generate_key(
                     {
                         "key_id": metadata["key_id"],
                         "name": name,
+                        "project": metadata.get("project", ""),
                         "cert_pem": cert_path.read_text(encoding="utf-8"),
                         "action": "upsert",
                     }
@@ -766,6 +773,7 @@ async def admin_sync_client_cert(key_id: str, admin_session: str | None = Cookie
             {
                 "key_id": key_id,
                 "name": metadata.get("name", ""),
+                "project": metadata.get("project", ""),
                 "cert_pem": cert_path.read_text(encoding="utf-8"),
                 "action": "upsert",
             }

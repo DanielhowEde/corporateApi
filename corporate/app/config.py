@@ -46,6 +46,10 @@ class Config:
         "KEYS_DIR": "./data/keys",
         # Pending messages directory (auto-send disabled)
         "PENDING_DIR": "./data/pending",
+        # Payload templates + JSON Schemas for the programmatic API.
+        # Layout: {PAYLOADS_DIR}/{PROJECT}/{template}.json
+        #         {PAYLOADS_DIR}/{PROJECT}/Schemas/*.json
+        "PAYLOADS_DIR": "./data/payloads",
         # Default retention for message history, in days.
         # Used as the pre-filled value on the History "Clear" form.
         "HISTORY_RETENTION_DAYS": "7",
@@ -147,6 +151,11 @@ class Config:
     def pending_dir(self) -> Path:
         """Get the pending messages directory."""
         return Path(self._config["PENDING_DIR"])
+
+    @property
+    def payloads_dir(self) -> Path:
+        """Root directory for payload templates and JSON Schemas."""
+        return Path(self._config["PAYLOADS_DIR"])
 
     @property
     def history_retention_days(self) -> int:

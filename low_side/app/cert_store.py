@@ -91,6 +91,7 @@ class CertStore:
         record = {
             "key_id": key_id,
             "name": cert_data.get("name", ""),
+            "project": (cert_data.get("project") or "").strip().upper(),
             "cert_pem": cert_data.get("cert_pem", ""),
             "status": "revoked" if action == "revoke" else "active",
             "synced_at": datetime.now().isoformat(),
@@ -104,6 +105,27 @@ class CertStore:
             return cert_path
         except OSError as e:
             raise CertStoreError(f"Failed to save client cert: {e}") from e
+
+    def get_project_for_cn(self, common_name: str) -> str | None:
+        """
+        Look up the project bound to an active synced client cert with the
+        given CN (the `name` field on the sync record).
+
+        Returns the project code (uppercase) or None when:
+        - No active record has that CN
+        - The matching record has no project assigned
+        - The matching record is revoked
+        """
+        if not common_name:
+            return None
+        for record in self.list_clients():
+            if record.get("status") != "active":
+                continue
+            if record.get("name") != common_name:
+                continue
+            proj = (record.get("project") or "").strip().upper()
+            return proj or None
+        return None
 
     def list_clients(self) -> list[dict[str, Any]]:
         """List all synced client cert records, newest first."""

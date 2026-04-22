@@ -19,6 +19,7 @@ Files in {keys_dir}:
 
 import json
 import os
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -343,7 +344,12 @@ class KeyManager:
     # Key pair + client cert generation
     # -------------------------------------------------------------------
 
-    def generate_key_pair(self, name: str, key_size: int = DEFAULT_SIZE) -> dict[str, Any]:
+    def generate_key_pair(
+        self,
+        name: str,
+        key_size: int = DEFAULT_SIZE,
+        project: str | None = None,
+    ) -> dict[str, Any]:
         """
         Generate an RSA key pair and issue a client certificate signed by
         the local CA. The certificate can be used for mTLS authentication.
@@ -351,6 +357,9 @@ class KeyManager:
         Args:
             name: Human-readable name (used as CN in the cert subject)
             key_size: RSA key size in bits (2048 or 4096)
+            project: Optional 3-char project code. When set, the programmatic
+                API will only accept requests authenticated with this cert
+                for that project.
 
         Returns:
             Metadata dict with key_id, paths, and cert details
@@ -358,6 +367,10 @@ class KeyManager:
         Raises:
             KeyManagerError: If generation fails
         """
+        if project is not None:
+            project = project.strip().upper()
+            if not re.match(r"^[A-Z0-9]{3}$", project):
+                raise KeyManagerError("project must be 3 uppercase alphanumeric characters")
         try:
             from cryptography import x509
             from cryptography.hazmat.primitives import hashes, serialization
@@ -456,6 +469,7 @@ class KeyManager:
             metadata = {
                 "key_id": key_id,
                 "name": name,
+                "project": project or "",
                 "algorithm": "RSA",
                 "key_size": key_size,
                 "created": datetime.now().isoformat(),
@@ -546,6 +560,26 @@ class KeyManager:
         except (json.JSONDecodeError, OSError) as e:
             logger.error(f"Failed to revoke key: id={key_id}, error={e}")
             return False
+
+    def get_project_for_cn(self, common_name: str) -> str | None:
+        """
+        Look up the project bound to the active client cert with the given CN.
+
+        Returns the project code (uppercase) or None when:
+        - No active key has that CN
+        - The matching key has no project assigned
+        - The matching key is revoked/orphaned
+        """
+        if not common_name:
+            return None
+        for meta in self.list_keys():
+            if meta.get("status") != "active":
+                continue
+            if meta.get("name") != common_name:
+                continue
+            proj = (meta.get("project") or "").strip().upper()
+            return proj or None
+        return None
 
     def delete_key(self, key_id: str) -> bool:
         """Permanently delete a key pair."""

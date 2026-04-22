@@ -19,12 +19,13 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
+from . import api, user
 from . import auth as low_auth
-from . import user
 from .cert_store import CertStore, CertStoreError
 from .file_store import FileStore, FileStoreError
 from .gateway_client import GatewayClient, GatewayError, GatewayUnavailableError
 from .models import ErrorResponse, HealthResponse, Message, SuccessResponse
+from .payload_store import PayloadStore
 from .utils import generate_request_id, set_request_id, setup_logging
 
 # Configure logging
@@ -53,6 +54,11 @@ async def lifespan(_app: FastAPI):
     user.set_gateway_client(gateway_client)
     user.set_file_store(file_store)
 
+    # Programmatic API (/api/v1) — resolves CN -> project via cert_store
+    api.set_gateway_client(gateway_client)
+    api.set_cert_store(cert_store)
+    api.set_payload_store(PayloadStore())
+
     logger.info(f"Message store: {file_store.master_dir}")
     logger.info(f"Gateway URL: {gateway_client.base_url}")
     logger.info(f"Cert store: {cert_store.keys_dir}")
@@ -78,6 +84,9 @@ app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 # Include user portal routes
 app.include_router(user.router)
+
+# Include programmatic API routes
+app.include_router(api.router)
 
 
 # =============================================================================

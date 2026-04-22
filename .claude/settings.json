@@ -5,7 +5,16 @@
       "Bash(python -m pytest tests/test_audit.py -v)",
       "Bash(python -m ruff check --fix .)",
       "Bash(python -m ruff check .)",
-      "Bash(python -m ruff format .)"
+      "Bash(python -m ruff format .)",
+      "Bash(python -m pip install \"jsonschema>=4.0\")",
+      "Bash(python -m pytest tests/test_programmatic_api.py -x --tb=short)",
+      "Bash(python -m pytest tests/test_programmatic_api.py --tb=short)",
+      "Bash(python -m pytest --tb=short)",
+      "Bash(python -c \"import yaml; yaml.safe_load\\(open\\('api-contracts/corporate-api.yaml'\\)\\); yaml.safe_load\\(open\\('api-contracts/low-side-api.yaml'\\)\\); print\\('ok'\\)\")",
+      "Bash(python -m pylint corporate/app low_side/app)",
+      "Bash(python -m pylint app)",
+      "Bash(python -m pylint --rcfile=../.pylintrc app)",
+      "Bash(python -m pytest -q)"
     ]
   }
 }

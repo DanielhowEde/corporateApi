@@ -48,6 +48,13 @@
                 <option value="4096">RSA 4096-bit</option>
             </select>
         </div>
+        <div class="form-group">
+            <label for="key_project">Project (optional)</label>
+            <input type="text" id="key_project" name="key_project" class="form-control"
+                   placeholder="e.g. AAA" maxlength="3" pattern="[A-Za-z0-9]{3}"
+                   title="3 uppercase alphanumeric characters, or leave blank"
+                   style="width: 8rem; text-transform: uppercase;">
+        </div>
         <button type="submit" class="btn btn-primary">Generate Key</button>
     </form>
 </div>
@@ -60,6 +67,7 @@
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Project</th>
                 <th>Algorithm</th>
                 <th>Size</th>
                 <th>Created</th>
@@ -71,6 +79,7 @@
             {% for key in keys %}
             <tr>
                 <td><strong>{{ key.name }}</strong></td>
+                <td>{% if key.project %}<code>{{ key.project }}</code>{% else %}<span style="color:#888;">—</span>{% endif %}</td>
                 <td>{{ key.algorithm }}</td>
                 <td>{{ key.key_size }}-bit</td>
                 <td>{{ key.created[:19] }}</td>

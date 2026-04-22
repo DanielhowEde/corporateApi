@@ -41,6 +41,10 @@ class Config:
         "HISTORY_RETENTION_DAYS": "7",
         # Users file path (synced from corporate via gateway)
         "USERS_FILE_PATH": "./data/users.json",
+        # Payload templates + JSON Schemas for the programmatic API.
+        # Layout: {PAYLOADS_DIR}/{PROJECT}/{template}.json
+        #         {PAYLOADS_DIR}/{PROJECT}/Schemas/*.json
+        "PAYLOADS_DIR": "./data/payloads",
     }
 
     _instance: Optional["Config"] = None
@@ -111,6 +115,11 @@ class Config:
     def error_dir(self) -> Path:
         """Get the error directory for storing application errors."""
         return Path(self._config["ERROR_DIR"])
+
+    @property
+    def payloads_dir(self) -> Path:
+        """Root directory for payload templates and JSON Schemas."""
+        return Path(self._config["PAYLOADS_DIR"])
 
     @property
     def history_retention_days(self) -> int:
