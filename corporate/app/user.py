@@ -697,13 +697,57 @@ async def user_pending(
     )
 
 
+_VALID_SEND_ORDERS = {"selected", "reverse", "shuffle", "oldest", "newest"}
+
+
+def _apply_send_order(
+    message_ids: list[str], order: str, records_by_id: dict[str, dict]
+) -> list[str]:
+    """
+    Reorder `message_ids` according to `order`:
+
+      selected — as ticked on the form (caller-provided order)
+      reverse  — reverse of the caller-provided order
+      shuffle  — random permutation (each call different; seeded from os.urandom)
+      oldest   — sorted by the pending record's `created` timestamp, oldest first
+      newest   — sorted by the pending record's `created` timestamp, newest first
+
+    Unknown values fall back to `selected` without raising.
+    """
+    import random
+    import secrets
+
+    if order == "reverse":
+        return list(reversed(message_ids))
+    if order == "shuffle":
+        # Use a secrets-seeded Random so shuffles aren't predictable across
+        # requests even within the same process.
+        rnd = random.Random(secrets.token_bytes(16))
+        shuffled = list(message_ids)
+        rnd.shuffle(shuffled)
+        return shuffled
+    if order in ("oldest", "newest"):
+        return sorted(
+            message_ids,
+            key=lambda mid: records_by_id.get(mid, {}).get("created", ""),
+            reverse=(order == "newest"),
+        )
+    return message_ids  # "selected" or any unknown value
+
+
 @router.post("/pending/bulk-send", name="user_bulk_send_pending")
 async def user_bulk_send_pending(
     request: Request,
     message_ids: list[str] = Form(default=[]),
+    order: str = Form("selected"),
     session_token: str | None = Cookie(None),
 ):
-    """Send multiple selected pending messages."""
+    """
+    Send multiple selected pending messages.
+
+    Supports out-of-order delivery for testing downstream sequencing assumptions
+    (see `_apply_send_order` for the valid `order` values).
+    """
     redirect, username = require_auth(session_token)
     if redirect:
         return redirect
@@ -723,12 +767,32 @@ async def user_bulk_send_pending(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
+    # Fetch records once up-front so we can (a) sort by created timestamp
+    # if needed and (b) still send messages whose files disappear mid-loop
+    # without re-reading disk each time.
+    records_by_id: dict[str, dict] = {}
+    for mid in message_ids:
+        try:
+            records_by_id[mid] = file_store.get_pending(mid)
+        except FileStoreError:
+            records_by_id[mid] = {}
+
+    order_normalised = order if order in _VALID_SEND_ORDERS else "selected"
+    ordered_ids = _apply_send_order(message_ids, order_normalised, records_by_id)
+    logger.info(
+        f"Bulk send: user={username} order={order_normalised} "
+        f"count={len(ordered_ids)} sequence={ordered_ids}"
+    )
+
     sent = 0
     failed = 0
-    for msg_id in message_ids:
+    for msg_id in ordered_ids:
+        record = records_by_id.get(msg_id) or {}
+        if not record:
+            failed += 1
+            continue
+        wrapped = record.get("wrapped", record.get("message", {}))
         try:
-            record = file_store.get_pending(msg_id)
-            wrapped = record.get("wrapped", record.get("message", {}))
             await gateway_client.send_wrapped(wrapped)
             file_store.remove_pending(msg_id)
             sent += 1
@@ -736,16 +800,18 @@ async def user_bulk_send_pending(
         except (GatewayUnavailableError, GatewayError) as e:
             failed += 1
             logger.error(f"Failed to send pending message {msg_id}: {e}")
-        except FileStoreError:
-            failed += 1
 
+    scope = f"order={order_normalised}"
     if failed == 0:
         return RedirectResponse(
-            url=f"/user/pending?message={sent}+message(s)+sent+successfully",
+            url=f"/user/pending?message={sent}+message(s)+sent+({scope})",
             status_code=status.HTTP_303_SEE_OTHER,
         )
     return RedirectResponse(
-        url=f"/user/pending?error={sent}+sent,+{failed}+failed.+Check+gateway+availability.",
+        url=(
+            f"/user/pending?error={sent}+sent,+{failed}+failed+({scope}).+"
+            "Check+gateway+availability."
+        ),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

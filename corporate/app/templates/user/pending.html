@@ -18,11 +18,23 @@
 
     {% if pending %}
     <form id="bulkForm" action="/user/pending/bulk-send" method="post">
-        <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: center;">
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap;">
             <button type="submit" class="btn btn-success" id="sendSelectedBtn" disabled
                     style="padding: 0.5rem 1.25rem;">
                 Send Selected (<span id="selectedCount">0</span>)
             </button>
+
+            <label for="send_order" style="margin: 0; font-size: 0.9rem; color: #6b7280;">Order:</label>
+            <select name="order" id="send_order" class="form-control"
+                    style="padding: 0.4rem 0.6rem; width: auto; font-size: 0.9rem;"
+                    title="Pick a delivery order. 'Reverse' / 'Shuffle' are for testing downstream sequence handling.">
+                <option value="selected">Selected (tick order)</option>
+                <option value="oldest">Oldest first</option>
+                <option value="newest">Newest first</option>
+                <option value="reverse">Reverse selected</option>
+                <option value="shuffle">Shuffle (random)</option>
+            </select>
+
             <button type="button" class="btn btn-secondary" id="selectAllBtn"
                     style="padding: 0.5rem 1rem;" onclick="toggleSelectAll()">
                 Select All
