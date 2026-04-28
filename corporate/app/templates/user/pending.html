@@ -24,6 +24,13 @@
                 Send Selected (<span id="selectedCount">0</span>)
             </button>
 
+            <button type="submit" class="btn btn-secondary" id="sendKeepSelectedBtn" disabled
+                    name="keep" value="1"
+                    style="padding: 0.5rem 1.25rem; background: #2563eb; color: white;"
+                    title="Send to gateway but keep the pending records so they can be re-sent later">
+                Send &amp; Keep (<span id="selectedCountKeep">0</span>)
+            </button>
+
             <label for="send_order" style="margin: 0; font-size: 0.9rem; color: #6b7280;">Order:</label>
             <select name="order" id="send_order" class="form-control"
                     style="padding: 0.4rem 0.6rem; width: auto; font-size: 0.9rem;"
@@ -93,6 +100,12 @@
                                     class="btn btn-success" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;">
                                 Send
                             </button>
+                            <button type="submit" formaction="/user/pending/{{ msg.ID }}/send-and-keep"
+                                    class="btn btn-secondary"
+                                    style="padding: 0.35rem 0.75rem; font-size: 0.85rem; background: #2563eb; color: white;"
+                                    title="Send to gateway but keep this pending record so it can be re-sent later">
+                                Send &amp; Keep
+                            </button>
                             <a href="/user/pending/{{ msg.ID }}/edit-token"
                                class="btn btn-secondary"
                                style="padding: 0.35rem 0.75rem; font-size: 0.85rem;"
@@ -120,7 +133,9 @@
         var count = checked.length;
 
         document.getElementById('selectedCount').textContent = count;
+        document.getElementById('selectedCountKeep').textContent = count;
         document.getElementById('sendSelectedBtn').disabled = count === 0;
+        document.getElementById('sendKeepSelectedBtn').disabled = count === 0;
         document.getElementById('discardSelectedBtn').disabled = count === 0;
 
         var selectAll = document.getElementById('selectAllCheckbox');

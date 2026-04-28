@@ -740,6 +740,7 @@ async def user_bulk_send_pending(
     request: Request,
     message_ids: list[str] = Form(default=[]),
     order: str = Form("selected"),
+    keep: str = Form(""),
     session_token: str | None = Cookie(None),
 ):
     """
@@ -747,6 +748,9 @@ async def user_bulk_send_pending(
 
     Supports out-of-order delivery for testing downstream sequencing assumptions
     (see `_apply_send_order` for the valid `order` values).
+
+    When `keep` is truthy ("1", "true", "on") the pending records are *not*
+    removed after a successful send, so they can be replayed.
     """
     redirect, username = require_auth(session_token)
     if redirect:
@@ -784,6 +788,8 @@ async def user_bulk_send_pending(
         f"count={len(ordered_ids)} sequence={ordered_ids}"
     )
 
+    keep_copies = (keep or "").strip().lower() in {"1", "true", "on", "yes"}
+
     sent = 0
     failed = 0
     for msg_id in ordered_ids:
@@ -794,14 +800,16 @@ async def user_bulk_send_pending(
         wrapped = record.get("wrapped", record.get("message", {}))
         try:
             await gateway_client.send_wrapped(wrapped)
-            file_store.remove_pending(msg_id)
+            if not keep_copies:
+                file_store.remove_pending(msg_id)
             sent += 1
-            logger.info(f"User {username} sent pending message: {msg_id}")
+            verb = "sent (kept)" if keep_copies else "sent"
+            logger.info(f"User {username} {verb} pending message: {msg_id}")
         except (GatewayUnavailableError, GatewayError) as e:
             failed += 1
             logger.error(f"Failed to send pending message {msg_id}: {e}")
 
-    scope = f"order={order_normalised}"
+    scope = f"order={order_normalised}" + (",keep" if keep_copies else "")
     if failed == 0:
         return RedirectResponse(
             url=f"/user/pending?message={sent}+message(s)+sent+({scope})",
@@ -979,6 +987,55 @@ async def user_send_pending(
         logger.info(f"User {username} sent pending message: {message_id}")
         return RedirectResponse(
             url=f"/user/pending?message=Message+sent+successfully!+ID:+{message_id}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    except GatewayUnavailableError:
+        return RedirectResponse(
+            url="/user/pending?error=Gateway+unavailable.+Please+try+again+later.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    except GatewayError:
+        return RedirectResponse(
+            url="/user/pending?error=Gateway+rejected+the+message.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+
+@router.post("/pending/{message_id}/send-and-keep", name="user_send_and_keep_pending")
+async def user_send_and_keep_pending(
+    request: Request, message_id: str, session_token: str | None = Cookie(None)
+):
+    """
+    Send a pending message but leave the pending record in place so it can
+    be sent again later. Used for replay testing.
+    """
+    redirect, username = require_auth(session_token)
+    if redirect:
+        return redirect
+
+    from .file_store import FileStoreError
+    from .gateway_client import GatewayError, GatewayUnavailableError
+
+    if not file_store or not gateway_client:
+        return RedirectResponse(
+            url="/user/pending?error=Service+not+configured",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        record = file_store.get_pending(message_id)
+    except FileStoreError:
+        return RedirectResponse(
+            url="/user/pending?error=Pending+message+not+found",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    wrapped = record.get("wrapped", record.get("message", {}))
+    try:
+        await gateway_client.send_wrapped(wrapped)
+        logger.info(f"User {username} sent (kept) pending message: {message_id}")
+        return RedirectResponse(
+            url=f"/user/pending?message=Sent+and+kept+for+replay:+{message_id}",
             status_code=status.HTTP_303_SEE_OTHER,
         )
     except GatewayUnavailableError:

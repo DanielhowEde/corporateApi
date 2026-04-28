@@ -29,10 +29,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
 from .gateway_client import GatewayError, GatewayUnavailableError
-from .models import ErrorResponse, Message, SuccessResponse
+from .models import ErrorResponse, SuccessResponse
 from .payload_store import PayloadStore, PayloadStoreError
 from .utils import setup_logging
 
@@ -260,25 +259,29 @@ async def send_schema(project: str, request: Request, payload: dict[str, Any]):
 async def _validate_and_send(
     request_id: str, project: str, payload: dict[str, Any]
 ) -> JSONResponse:
-    """Run Message + project schema validation, then forward via gateway."""
-    # Project-defined JSON Schemas must all pass.
+    """
+    Validate against the project's JSON Schemas and forward via gateway.
+
+    Project schemas are the sole authority on payload shape — callers can
+    define entirely custom message formats per project. The only field the
+    server *needs* is `ID` (used as the message identifier in the response
+    and downstream tracking); if it's missing we synthesise a UUID4 so a
+    single id is always returned. Schemas can require `ID` themselves to
+    block this fallback if desired.
+    """
     ok, errs = payload_store.validate_payload(project, payload)
     if not ok:
         logger.warning(f"Project schema validation failed: project={project}, errors={errs}")
         return _error(request_id, status.HTTP_400_BAD_REQUEST, "; ".join(errs))
 
-    # Corporate Message model validation (shape + field rules).
-    try:
-        validated = Message.model_validate(payload)
-    except ValidationError as exc:
-        logger.warning(f"Message schema validation failed: errors={exc.errors()}")
-        return _error(request_id, status.HTTP_400_BAD_REQUEST, "Message schema validation failed")
-
     if gateway_client is None:
         return _error(request_id, status.HTTP_503_SERVICE_UNAVAILABLE, "Gateway not configured")
 
+    message_id = str(payload.get("ID") or uuid.uuid4())
+    payload.setdefault("ID", message_id)
+
     try:
-        await gateway_client.send_message(validated.model_dump(by_alias=True))
+        await gateway_client.send_message(payload)
     except GatewayUnavailableError as exc:
         logger.error(f"Gateway unavailable: {exc}")
         return _error(request_id, status.HTTP_503_SERVICE_UNAVAILABLE, "Gateway unavailable")
@@ -286,8 +289,8 @@ async def _validate_and_send(
         logger.error(f"Gateway error: {exc}")
         return _error(request_id, status.HTTP_400_BAD_REQUEST, "Gateway rejected message")
 
-    logger.info(f"API sent message: project={project}, id={validated.ID}")
+    logger.info(f"API sent message: project={project}, id={message_id}")
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content=SuccessResponse(request_id=request_id, message_id=validated.ID).model_dump(),
+        content=SuccessResponse(request_id=request_id, message_id=message_id).model_dump(),
     )

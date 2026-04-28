@@ -243,6 +243,83 @@ def test_schema_mode_no_schemas_rejects(tmp_path):
 # ---------------------------------------------------------------------
 
 
+def test_schema_mode_accepts_custom_shape(tmp_path):
+    """
+    Project schemas alone decide payload shape — corporate's Message model
+    is not enforced. Caller should be able to define a totally custom
+    message format in their schema and have it pass.
+    """
+    from app import api, main
+    from app.payload_store import PayloadStore
+
+    payloads_root = tmp_path / "payloads"
+    custom_schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["sensor_id", "reading_celsius", "captured_at"],
+        "properties": {
+            "sensor_id": {"type": "string", "pattern": "^S-[0-9]{3}$"},
+            "reading_celsius": {"type": "number", "minimum": -50, "maximum": 150},
+            "captured_at": {"type": "string", "format": "date-time"},
+        },
+        "additionalProperties": True,
+    }
+    _write_json(payloads_root / "AAA" / "Schemas" / "telemetry.json", custom_schema)
+
+    stub_gateway = _StubGateway()
+    api.set_gateway_client(stub_gateway)
+    api.set_key_manager(_StubKeyManager({"alice": "AAA"}))
+    api.set_payload_store(PayloadStore(payloads_dir=payloads_root))
+    main.gateway_client = stub_gateway
+
+    client = TestClient(main.app)
+    payload = {
+        "sensor_id": "S-042",
+        "reading_celsius": 21.7,
+        "captured_at": "2026-04-22T09:30:00",
+    }
+    r = client.post("/api/v1/messages/schema/AAA", json=payload, headers=_as_alice())
+    assert r.status_code == 200, r.text
+
+    sent = stub_gateway.sent[0]
+    assert sent["sensor_id"] == "S-042"
+    assert sent["reading_celsius"] == 21.7
+    # Server auto-injected an ID for tracking
+    uuid.UUID(sent["ID"])
+    # Project from URL was forced onto payload
+    assert sent["Project"] == "AAA"
+
+
+def test_schema_mode_rejects_custom_shape_violating_schema(tmp_path):
+    """Custom-shape payload that violates the user's schema must be 400."""
+    from app import api, main
+    from app.payload_store import PayloadStore
+
+    payloads_root = tmp_path / "payloads"
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["sensor_id"],
+        "properties": {"sensor_id": {"type": "string", "pattern": "^S-[0-9]{3}$"}},
+    }
+    _write_json(payloads_root / "AAA" / "Schemas" / "telemetry.json", schema)
+
+    stub_gateway = _StubGateway()
+    api.set_gateway_client(stub_gateway)
+    api.set_key_manager(_StubKeyManager({"alice": "AAA"}))
+    api.set_payload_store(PayloadStore(payloads_dir=payloads_root))
+    main.gateway_client = stub_gateway
+
+    client = TestClient(main.app)
+    r = client.post(
+        "/api/v1/messages/schema/AAA",
+        json={"sensor_id": "INVALID-FORMAT"},
+        headers=_as_alice(),
+    )
+    assert r.status_code == 400
+    assert stub_gateway.sent == []
+
+
 def test_list_templates(api_client):
     client, _, payloads_root = api_client
     _write_json(payloads_root / "AAA" / "regression.json", _valid_template_payload("AAA"))

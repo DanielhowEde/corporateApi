@@ -14,7 +14,16 @@
       "Bash(python -m pylint corporate/app low_side/app)",
       "Bash(python -m pylint app)",
       "Bash(python -m pylint --rcfile=../.pylintrc app)",
-      "Bash(python -m pytest -q)"
+      "Bash(python -m pytest -q)",
+      "Bash(python -c \"import jsonschema; print\\('jsonschema', jsonschema.__version__\\); from corporate.app import api as cor_api, payload_store as cor_ps, main as cor_main; from low_side.app import api as low_api, payload_store as low_ps, main as low_main; print\\('corporate routes:', [r.path for r in cor_main.app.routes if '/api/v1' in getattr\\(r,'path',''\\)]\\); print\\('low-side routes:', [r.path for r in low_main.app.routes if '/api/v1' in getattr\\(r,'path',''\\)]\\)\")",
+      "Bash(python -m uvicorn main:app --port 8000 --log-level warning)",
+      "Bash(python -m uvicorn app.main:app --port 8001 --log-level warning)",
+      "Bash(python -m uvicorn app.main:app --port 8002 --log-level warning)",
+      "Bash(python -c ' *)",
+      "Bash(taskkill //F //IM python.exe //FI \"WINDOWTITLE eq *\")",
+      "Bash(java -version)",
+      "Bash(python -m pytest tests/test_send_and_keep.py tests/test_bulk_send_order.py -q)",
+      "Bash(python -m pytest tests/test_send_and_keep.py -q)"
     ]
   }
 }
